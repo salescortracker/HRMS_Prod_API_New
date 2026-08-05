@@ -283,6 +283,17 @@ namespace BusinessLayer.Implementations
         /// <returns></returns>
         public async Task<int> addEmpEduAsync(EmployeeEducationDto model)
         {
+            var exists = await _context.EmployeeEducations.AnyAsync(x =>
+        x.UserId == model.UserId &&
+        x.CompanyId == model.CompanyId &&
+        x.RegionId == model.RegionId &&
+        x.Qualification.Trim().ToLower() == model.Qualification.Trim().ToLower() &&
+        x.Specialization.Trim().ToLower() == model.Specialization.Trim().ToLower() &&
+        x.Institution.Trim().ToLower() == model.Institution.Trim().ToLower());
+
+            if (exists)
+                return -1;
+
             var entity = new EmployeeEducation
             {
                 UserId = model.UserId,
@@ -312,6 +323,20 @@ namespace BusinessLayer.Implementations
         /// <returns></returns>
         public async Task<bool> updateEmpEduAsync(EmployeeEducationDto model)
         {
+
+            var exists = await _context.EmployeeEducations.AnyAsync(x =>
+    x.EducationId != model.EducationId &&
+    x.UserId == model.UserId &&
+    x.CompanyId == model.CompanyId &&
+    x.RegionId == model.RegionId &&
+    x.Qualification.Trim().ToLower() == model.Qualification.Trim().ToLower() &&
+    x.Specialization.Trim().ToLower() == model.Specialization.Trim().ToLower() &&
+    x.Institution.Trim().ToLower() == model.Institution.Trim().ToLower());
+
+            if (exists)
+            {
+                return false;
+            }
             var entity = await _context.EmployeeEducations.FindAsync(model.EducationId);
             if (entity == null)
                 return false;
@@ -1895,6 +1920,16 @@ namespace BusinessLayer.Implementations
         {
             try
             {
+                var duplicate = await _context.EmployeeBankDetails
+       .AnyAsync(x =>
+           x.UserId == dto.UserId &&
+           x.AccountNumber == dto.AccountNumber &&
+           x.Ifsccode == dto.Ifsccode);
+
+                if (duplicate)
+                {
+                    throw new Exception("Bank details already exist.");
+                }
                 var entity = new EmployeeBankDetail
                 {
                     EmployeeId = dto.EmployeeId,
@@ -1927,8 +1962,22 @@ namespace BusinessLayer.Implementations
         /// <returns></returns>
         public async Task<bool> updateempBankAsync(EmployeeBankDetailsDto dto)
         {
+
+       
             var repo = _unitOfWork.Repository<EmployeeBankDetail>();
             var entity = await repo.GetByIdAsync(dto.BankDetailsId);
+
+            var duplicate = (await repo.FindAsync(x =>
+   x.BankDetailsId != dto.BankDetailsId &&
+   x.UserId == dto.UserId &&
+   x.AccountNumber == dto.AccountNumber &&
+   x.Ifsccode == dto.Ifsccode))
+.Any();
+
+            if (duplicate)
+            {
+                throw new Exception("Bank details already exist.");
+            }
 
             if (entity is null) return false;
 

@@ -253,6 +253,19 @@ public class UpdateResignationStatusRequest
             model.CreatedBy = model.UserId;
 
             var id = await _employeeService.addEmpEduAsync(model);
+            if (id == -1)
+            {
+                return BadRequest(new
+                {
+                    message = "Education record already exists."
+                });
+            }
+
+            return Ok(new
+            {
+                message = "Saved successfully",
+                id
+            });
 
             return Ok(new { message = "Saved successfully", id });
         }
@@ -1607,10 +1620,22 @@ public class UpdateResignationStatusRequest
         [HttpPost("CreateBankDetails")]
         public async Task<IActionResult> CreateBankDetails([FromBody] EmployeeBankDetailsDto dto)
         {
-            if (dto == null) return BadRequest("Invalid data");
-            var success = await _employeeService.addempBankAsync(dto);
-            if (!success) return BadRequest("Failed to create bank details");
-            return Ok(dto);
+            try
+            {
+                var success = await _employeeService.addempBankAsync(dto);
+
+                if (!success)
+                    return BadRequest(new { message = "Failed to create bank details" });
+
+                return Ok(dto);
+            }
+            catch (Exception ex)
+            {
+                return BadRequest(new
+                {
+                    message = ex.Message
+                });
+            }
         }
         /// <summary>
         /// 
