@@ -24,6 +24,16 @@ namespace BusinessLayer.Implementations
         {
             try
             {
+                var exists = await _context.MissedPunchRequests.AnyAsync(x =>
+    x.EmployeeId == dto.EmployeeID &&
+    x.MissedDate == dto.MissedDate &&
+    x.MissedType == dto.MissedType &&
+    x.Status == "Pending");
+
+                if (exists)
+                {
+                    throw new Exception("A pending request already exists for this date.");
+                }
                 var entity = new MissedPunchRequest
                 {
                     EmployeeId = dto.EmployeeID,
