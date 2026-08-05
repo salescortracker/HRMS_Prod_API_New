@@ -1046,7 +1046,8 @@ namespace BusinessLayer.Implementations
                     x.UserId,
                     x.FullName,
                     x.Email,
-                    x.JoiningDate
+                    x.JoiningDate,
+                    x.DepartmentId
                 })
                 .ToListAsync();
 
@@ -1054,6 +1055,16 @@ namespace BusinessLayer.Implementations
             foreach (var employee in anniversaryEmployees)
             {
                 int years = today.Year - employee.JoiningDate.Value.Year;
+                if (years <= 0)
+                {
+                    continue;
+                }
+                var departmentEmployees = await _context.Users
+                .Where(x =>
+                    x.Status == "Active" &&
+                    x.DepartmentId == employee.DepartmentId &&
+                    !string.IsNullOrEmpty(x.Email))
+                .ToListAsync();
 
 
                 string subject =
@@ -1086,17 +1097,20 @@ namespace BusinessLayer.Implementations
                         </html>";
 
 
-                await _emailService.SendEmailAsync(
-                    employee.Email,
-                    subject,
-                    body);
+                foreach (var deptEmployee in departmentEmployees)
+                {
+                    await _emailService.SendEmailAsync(
+                        deptEmployee.Email,
+                        subject,
+                        body);
+                }
                 await _notificationService.CreateNotificationAsync(
-                        new List<int> { employee.UserId },
+                        departmentEmployees.Select(x => x.UserId).ToList(),
                         "Work Anniversary 🎉",
-                        $"Congratulations on completing {years} years!",
+                        $"{employee.FullName} is celebrating {years} year(s) with the organization. Wish them a Happy Work Anniversary!",
                         "Work Anniversary",
                         employee.UserId
-                );
+                    );
             }
 
 
@@ -1115,7 +1129,8 @@ namespace BusinessLayer.Implementations
                     {
                         UserId = user.UserId,
                         Name = emp.FirstName + " " + emp.LastName,
-                        Email = user.Email
+                        Email = user.Email,
+                        Department = user.DepartmentId
                     }
 
                 ).ToListAsync();
@@ -1124,6 +1139,12 @@ namespace BusinessLayer.Implementations
 
             foreach (var employee in birthdayEmployees)
             {
+                var departmentEmployees = await _context.Users
+                .Where(x =>
+                    x.Status == "Active" &&
+                    x.DepartmentId == employee.Department &&
+                    !string.IsNullOrEmpty(x.Email))
+                .ToListAsync();
 
                 string subject =
                     $"Happy Birthday {employee.Name}";
@@ -1156,17 +1177,20 @@ namespace BusinessLayer.Implementations
                         </html>";
 
 
-                await _emailService.SendEmailAsync(
-                    employee.Email,
-                    subject,
-                    body);
+                foreach (var deptEmployee in departmentEmployees)
+                {
+                    await _emailService.SendEmailAsync(
+                        deptEmployee.Email,
+                        subject,
+                        body);
+                }
                 await _notificationService.CreateNotificationAsync(
-                        new List<int> { employee.UserId },
-                        "Happy Birthday 🎂",
-                        "Wishing you a very Happy Birthday!",
-                        "Birthday",
-                        employee.UserId
-                    );
+                    departmentEmployees.Select(x => x.UserId).ToList(),
+                    "Happy Birthday 🎂",
+                    $"Today is {employee.Name}'s birthday. Wish them a wonderful day!",
+                    "Birthday",
+                    employee.UserId
+                );
             }
         }
 
