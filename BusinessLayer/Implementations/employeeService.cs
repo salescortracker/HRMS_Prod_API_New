@@ -3345,6 +3345,21 @@ namespace BusinessLayer.Implementations
                 on Convert.ToInt32(ep.EmployeeType) 
                 equals etm.EmploymenttypeId into etmJoin
                 from etm in etmJoin.DefaultIfEmpty()
+                join g in _context.Grades
+on new
+{
+    CompanyId = u.CompanyId,
+    RegionId = u.RegionId,
+    GradeId = Convert.ToInt32(ep.BandGrade)
+}
+equals new
+{
+    CompanyId = g.CompanyId,
+    RegionId = g.RegionId,
+    GradeId = g.GradeId
+}
+into gradeJoin
+                from g in gradeJoin.DefaultIfEmpty()
 
                 join dept in _context.Departments
     on new
@@ -3375,7 +3390,7 @@ namespace BusinessLayer.Implementations
 
                     Phone = ep.MobileNumber,
 
-                    BandGrade = ep.BandGrade,
+                    BandGrade = g.GradeName,
                     EsicNumber = ep.EsicNumber,
                     PFNumber = ep.Pfnumber,
                     UAN = ep.Uan,
