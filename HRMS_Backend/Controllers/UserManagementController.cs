@@ -1688,9 +1688,26 @@ namespace HRMS_Backend.Controllers
         [Route("DeleteGeoLocation/{id}")]
         public async Task<IActionResult> DeleteGeoLocation(int id)
         {
-            var result = await _geoLocationService.DeleteLocationAsync(id);
-            if (!result) return NotFound();
-            return NoContent();
+            try
+            {
+                var result = await _geoLocationService.DeleteLocationAsync(id);
+                if (!result)
+                    return NotFound(new
+                    {
+                        message = "Geo Location not found."
+                    });
+                return Ok(new
+                {
+                    message = "Geo Location deleted successfully."
+                });
+            }
+            catch (Exception ex)
+            {
+                return BadRequest(new
+                {
+                    message = ex.Message
+                });
+            }
         }
 
         [HttpPost]

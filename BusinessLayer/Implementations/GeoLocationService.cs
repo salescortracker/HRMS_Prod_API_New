@@ -2,6 +2,7 @@
 using BusinessLayer.Interfaces;
 using DataAccessLayer.DBContext;
 using DataAccessLayer.Repositories.GeneralRepository;
+using Microsoft.EntityFrameworkCore;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -14,10 +15,12 @@ namespace BusinessLayer.Implementations
     public class GeoLocationService : IGeoLocationService
     {
         private readonly IUnitOfWork _unitOfWork;
+        private readonly HRMSContext _context;
 
-        public GeoLocationService(IUnitOfWork unitOfWork)
+        public GeoLocationService(IUnitOfWork unitOfWork, HRMSContext context)
         {
             _unitOfWork = unitOfWork;
+            _context = context;
         }
 
         /* ================= GET ALL ================= */
@@ -128,11 +131,27 @@ namespace BusinessLayer.Implementations
         /* ================= DELETE ================= */
         public async Task<bool> DeleteLocationAsync(int id)
         {
-            var entity = await _unitOfWork.Repository<GeoLocation>().GetByIdAsync(id);
-            if (entity == null) return false;
+            var entity = await _unitOfWork.Repository<GeoLocation>()
+                .GetByIdAsync(id);
+
+            if (entity == null)
+                return false;
+
+
+            var region = await _context.Regions
+                .FirstOrDefaultAsync(x => x.RegionId == entity.RegionId);
+
+
+            if (region != null && region.IsActive == true)
+            {
+                throw new Exception("Geo Location Region can be Active. Cannot be deleted.");
+            }
+
 
             _unitOfWork.Repository<GeoLocation>().Remove(entity);
+
             await _unitOfWork.CompleteAsync();
+
             return true;
         }
 
