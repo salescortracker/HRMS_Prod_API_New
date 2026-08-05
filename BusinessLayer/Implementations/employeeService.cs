@@ -1891,10 +1891,53 @@ namespace BusinessLayer.Implementations
         /// <param name="dto"></param>
         /// <returns></returns>
 
+        //public async Task<bool> addempBankAsync(EmployeeBankDetailsDto dto)
+        //{
+        //    try
+        //    {
+        //        var entity = new EmployeeBankDetail
+        //        {
+        //            EmployeeId = dto.EmployeeId,
+        //            RegionId = dto.RegionId,
+        //            UserId = dto.UserId,
+        //            CompanyId = dto.CompanyId,
+        //            BankName = dto.BankName,
+        //            BranchName = dto.BranchName,
+        //            AccountHolderName = dto.AccountHolderName,
+        //            AccountNumber = dto.AccountNumber,
+        //            AccountTypeId = dto.AccountTypeId,
+        //            Ifsccode = dto.Ifsccode,
+        //            Micrcode = dto.Micrcode,
+        //            Upiid = dto.Upiid,
+        //            CreatedAt = DateTime.UtcNow
+        //        };
+
+        //        await _unitOfWork.Repository<EmployeeBankDetail>().AddAsync(entity);
+        //        return await _unitOfWork.CompleteAsync() > 0;
+        //    }
+        //    catch(Exception ex)
+        //    {
+        //        throw ex;
+        //    }
+        //}
+
         public async Task<bool> addempBankAsync(EmployeeBankDetailsDto dto)
         {
             try
             {
+                // Check duplicate account for same employee
+                var existing = (await _unitOfWork.Repository<EmployeeBankDetail>()
+                    .GetAllAsync())
+                    .FirstOrDefault(x =>
+                        x.UserId == dto.UserId &&
+                        x.AccountNumber == dto.AccountNumber &&
+                        x.Ifsccode == dto.Ifsccode);
+
+                if (existing != null)
+                {
+                    throw new Exception("Bank details already exist with this Account Number.");
+                }
+
                 var entity = new EmployeeBankDetail
                 {
                     EmployeeId = dto.EmployeeId,
@@ -1913,13 +1956,15 @@ namespace BusinessLayer.Implementations
                 };
 
                 await _unitOfWork.Repository<EmployeeBankDetail>().AddAsync(entity);
+
                 return await _unitOfWork.CompleteAsync() > 0;
             }
-            catch(Exception ex)
+            catch
             {
-                throw ex;
+                throw;
             }
         }
+
         /// <summary>
         /// 
         /// </summary>

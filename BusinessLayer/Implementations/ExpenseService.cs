@@ -444,36 +444,95 @@ namespace BusinessLayer.Implementations
                 })
                 .ToListAsync();
         }
+        //public async Task<List<CreateExpenseDto>> GetAllExpensesAsync(int companyId, int regionId)
+        //{
+        //    var expenses = await _context.Expenses
+        //        .AsNoTracking()
+        //        .Include(e => e.ExpenseCategory)
+        //        .Where(e =>
+        //    e.CompanyId == companyId &&
+        //    e.RegionId == regionId
+        //)// Include category info
+        //        .OrderByDescending(e => e.CreatedDate)
+        //        .ToListAsync();
+
+        //    return expenses.Select(e => new CreateExpenseDto
+        //    {
+        //        ProjectName = e.ProjectName,
+        //        Location = e.Location,
+        //        Country = e.Country,
+        //        ExpenseCategoryId = e.ExpenseCategoryId ?? 0,
+        //        ExpenseCategoryName = e.ExpenseCategory?.ExpenseCategoryName,
+        //        DepartmentId = e.DepartmentId,
+        //        CurrencyCode = e.CurrencyCode,
+        //        Amount = e.Amount,
+        //        ExpenseDate = e.ExpenseDate.HasValue ? e.ExpenseDate.Value.ToDateTime(TimeOnly.MinValue) : default,
+        //        Reason = e.Reason,
+        //        UserId = e.UserId,
+        //        CompanyId = e.CompanyId,
+        //        RegionId = e.RegionId,
+        //        Status = e.Status,
+        //        ReceiptPath = e.ReceiptPath
+        //    }).ToList();
+        //}
+
         public async Task<List<CreateExpenseDto>> GetAllExpensesAsync(int companyId, int regionId)
         {
-            var expenses = await _context.Expenses
-                .AsNoTracking()
-                .Include(e => e.ExpenseCategory)
-                .Where(e =>
-            e.CompanyId == companyId &&
-            e.RegionId == regionId
-        )// Include category info
-                .OrderByDescending(e => e.CreatedDate)
-                .ToListAsync();
+            var expenses = await (
+                from e in _context.Expenses
+                join u in _context.Users
+                    on e.UserId equals u.UserId into emp
+                from u in emp.DefaultIfEmpty()
 
-            return expenses.Select(e => new CreateExpenseDto
-            {
-                ProjectName = e.ProjectName,
-                Location = e.Location,
-                Country = e.Country,
-                ExpenseCategoryId = e.ExpenseCategoryId ?? 0,
-                ExpenseCategoryName = e.ExpenseCategory?.ExpenseCategoryName,
-                DepartmentId = e.DepartmentId,
-                CurrencyCode = e.CurrencyCode,
-                Amount = e.Amount,
-                ExpenseDate = e.ExpenseDate.HasValue ? e.ExpenseDate.Value.ToDateTime(TimeOnly.MinValue) : default,
-                Reason = e.Reason,
-                UserId = e.UserId,
-                CompanyId = e.CompanyId,
-                RegionId = e.RegionId,
-                Status = e.Status,
-                ReceiptPath = e.ReceiptPath
-            }).ToList();
+                join c in _context.ExpenseCategories
+                    on e.ExpenseCategoryId equals c.ExpenseCategoryId into cat
+                from c in cat.DefaultIfEmpty()
+
+                where e.CompanyId == companyId
+                   && e.RegionId == regionId
+
+                orderby e.CreatedDate descending
+
+                select new CreateExpenseDto
+                {
+                    EmployeeName = u != null ? u.FullName : "",
+
+                    ProjectName = e.ProjectName,
+
+                    Location = e.Location,
+
+                    Country = e.Country,
+
+                    ExpenseCategoryId = e.ExpenseCategoryId ?? 0,
+
+                    ExpenseCategoryName = c != null
+                        ? c.ExpenseCategoryName
+                        : "",
+
+                    DepartmentId = e.DepartmentId,
+
+                    CurrencyCode = e.CurrencyCode,
+
+                    Amount = e.Amount,
+
+                    ExpenseDate = e.ExpenseDate.HasValue
+                        ? e.ExpenseDate.Value.ToDateTime(TimeOnly.MinValue)
+                        : default,
+
+                    Reason = e.Reason,
+
+                    UserId = e.UserId,
+
+                    CompanyId = e.CompanyId,
+
+                    RegionId = e.RegionId,
+
+                    Status = e.Status,
+
+                    ReceiptPath = e.ReceiptPath
+                }).ToListAsync();
+
+            return expenses;
         }
 
     }
