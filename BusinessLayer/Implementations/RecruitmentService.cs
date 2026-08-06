@@ -2277,11 +2277,12 @@ int userId)
             var baseUrl = _configuration["AppSettings:FrontendUrl"];
 
             string uploadLink =
-                $"{baseUrl}/#/offer-documents" +
+                $"{baseUrl}/#/candidate-documents" +
                 $"/{offer.OfferId}" +
                 $"/{candidate.CandidateId}" +
                 $"/{offer.CompanyId}" +
                 $"/{offer.RegionId}";
+
 
             // ============================================================
             // ======================== EMAIL =============================
