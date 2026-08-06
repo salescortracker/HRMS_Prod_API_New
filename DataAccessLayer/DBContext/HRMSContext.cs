@@ -197,6 +197,8 @@ public partial class HRMSContext : DbContext
 
     public virtual DbSet<EmployeeNotification> EmployeeNotifications { get; set; }
 
+    public virtual DbSet<EmployeeOfferLetter> EmployeeOfferLetters { get; set; }
+
     public virtual DbSet<EmployeePersonalDetail> EmployeePersonalDetails { get; set; }
 
     public virtual DbSet<EmployeeReference> EmployeeReferences { get; set; }
@@ -399,7 +401,7 @@ public partial class HRMSContext : DbContext
 
     protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
 #warning To protect potentially sensitive information in your connection string, you should move it out of source code. You can avoid scaffolding the connection string by using the Name= syntax to read it from configuration - see https://go.microsoft.com/fwlink/?linkid=2131148. For more guidance on storing connection strings, see https://go.microsoft.com/fwlink/?LinkId=723263.
-        => optionsBuilder.UseSqlServer("Server=192.168.29.53,50491;Database=HRMS_prod_new;user id= sa; password=CtDev@2026@01; TrustServerCertificate=True;MultipleActiveResultSets=true;");
+        => optionsBuilder.UseSqlServer("Server=192.168.29.53,50491;Database=HRMS_Prod_New;user id= sa; password=CtDev@2026@01; TrustServerCertificate=True;MultipleActiveResultSets=true;");
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -2451,6 +2453,26 @@ public partial class HRMSContext : DbContext
             entity.Property(e => e.EmployeeCode).HasMaxLength(50);
             entity.Property(e => e.IsRead).HasDefaultValue(false);
             entity.Property(e => e.Message).HasMaxLength(500);
+        });
+
+        modelBuilder.Entity<EmployeeOfferLetter>(entity =>
+        {
+            entity.HasKey(e => e.EmployeeOfferLetterId).HasName("PK__Employee__86E298C151F658FD");
+
+            entity.ToTable("EmployeeOfferLetter", "employee");
+
+            entity.Property(e => e.AnnualPackage).HasColumnType("decimal(18, 2)");
+            entity.Property(e => e.CreatedAt)
+                .HasDefaultValueSql("(getdate())")
+                .HasColumnType("datetime");
+            entity.Property(e => e.Department).HasMaxLength(150);
+            entity.Property(e => e.Designation).HasMaxLength(150);
+            entity.Property(e => e.Email).HasMaxLength(250);
+            entity.Property(e => e.EmployeeCode).HasMaxLength(50);
+            entity.Property(e => e.EmployeeName).HasMaxLength(200);
+            entity.Property(e => e.IsSent).HasDefaultValue(false);
+            entity.Property(e => e.ModifiedAt).HasColumnType("datetime");
+            entity.Property(e => e.OfferLetterPath).HasMaxLength(500);
         });
 
         modelBuilder.Entity<EmployeePersonalDetail>(entity =>
