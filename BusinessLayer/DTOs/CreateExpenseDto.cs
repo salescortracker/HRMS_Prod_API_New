@@ -24,5 +24,7 @@ namespace BusinessLayer.DTOs
 
         public string? departmentName { get; set; }
         public string? HrEmail { get; set; }   // ✅ ADD THIS
+
+        public string? EmployeeName { get; set; }
     }
 }

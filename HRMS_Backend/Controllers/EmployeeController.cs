@@ -1604,14 +1604,39 @@ public class UpdateResignationStatusRequest
         /// </summary>
         /// <param name="dto"></param>
         /// <returns></returns>
+        //[HttpPost("CreateBankDetails")]
+        //public async Task<IActionResult> CreateBankDetails([FromBody] EmployeeBankDetailsDto dto)
+        //{
+        //    if (dto == null) return BadRequest("Invalid data");
+        //    var success = await _employeeService.addempBankAsync(dto);
+        //    if (!success) return BadRequest("Failed to create bank details");
+        //    return Ok(dto);
+        //}
+
         [HttpPost("CreateBankDetails")]
         public async Task<IActionResult> CreateBankDetails([FromBody] EmployeeBankDetailsDto dto)
         {
-            if (dto == null) return BadRequest("Invalid data");
-            var success = await _employeeService.addempBankAsync(dto);
-            if (!success) return BadRequest("Failed to create bank details");
-            return Ok(dto);
+            try
+            {
+                if (dto == null)
+                    return BadRequest("Invalid data");
+
+                var success = await _employeeService.addempBankAsync(dto);
+
+                if (!success)
+                    return BadRequest("Failed to create bank details");
+
+                return Ok(dto);
+            }
+            catch (Exception ex)
+            {
+                return BadRequest(new
+                {
+                    message = ex.Message
+                });
+            }
         }
+
         /// <summary>
         /// 
         /// </summary>
