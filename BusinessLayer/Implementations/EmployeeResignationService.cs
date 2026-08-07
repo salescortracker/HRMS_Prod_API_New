@@ -147,7 +147,7 @@ namespace BusinessLayer.Implementations
         }
 
 
-        // ===================== CREATE =====================
+        // ===================== CREATE ====================
         public async Task<EmployeeResignationDto> AddResignationAsync(EmployeeResignationDto dto)
         {
             if (dto == null)
@@ -640,23 +640,23 @@ namespace BusinessLayer.Implementations
                             ? "Approved"
                             : "Rejected";
 
-                    var subject = $"Resignation {actionStatus} - {entity.EmployeeId}";
+                    var subject = $"{requestType} {actionStatus} - {entity.EmployeeId}";
 
-                          var body = $@"
+                    var body = $@"
                             <p>Dear {employee.FullName},</p>
 
                             <p>
-                            This is to inform you that your resignation request has been
+                            This is to inform you that your <b>{requestType}</b> request has been
                             <b>{actionStatus}</b> by the <b>{actionBy}</b>.
                             </p>
 
                             <br/>
 
-                            <p><b>Resignation Details</b></p>
+                            <p><b>{requestType} Details</b></p>
 
                             <p>
                             <b>Employee Code:</b> {entity.EmployeeId}<br/>
-                            <b>Resignation Type:</b> {entity.ResignationType}<br/>
+                            <b>Request Type:</b> {requestType}<br/>
                             <b>Notice Period:</b> {entity.NoticePeriod} Days<br/>
                             <b>Last Working Day:</b> {entity.LastWorkingDay:dd-MMM-yyyy}<br/>
                             <b>Current Status:</b> {entity.Status}
