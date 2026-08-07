@@ -86,6 +86,10 @@ namespace BusinessLayer.Interfaces
         Task<List<CandidateDocumentWithCandidateDto>> GetAllCandidateDocuments(int companyId, int regionId);
         Task<bool> UpdateChecklistStatusAsync(int offerId, int companyId, int regionId, string status);
 
+        Task<int> SaveEmployeeOfferLetterAsync(EmployeeOfferLetterDto dto);
+
+        Task<bool> SendEmployeeOfferLetterAsync(int employeeOfferLetterId);
+
     }
 
 }

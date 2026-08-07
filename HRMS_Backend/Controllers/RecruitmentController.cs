@@ -419,7 +419,28 @@ namespace HRMS_Backend.Controllers
             return Ok("Updated successfully");
         }
 
+        [HttpPost("SaveEmployeeOfferLetter")]
+        public async Task<IActionResult> SaveEmployeeOfferLetter(EmployeeOfferLetterDto dto)
+        {
+            int id = await _service.SaveEmployeeOfferLetterAsync(dto);
 
+            return Ok(new
+            {
+                employeeOfferLetterId = id,
+                message = "Employee Offer Letter saved successfully"
+            });
+        }
+
+        [HttpPost("SendEmployeeOfferLetter/{id}")]
+        public async Task<IActionResult> SendEmployeeOfferLetter(int id)
+        {
+            await _service.SendEmployeeOfferLetterAsync(id);
+
+            return Ok(new
+            {
+                message = "Offer Letter sent successfully"
+            });
+        }
 
     }
 }

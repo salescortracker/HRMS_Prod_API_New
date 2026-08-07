@@ -12,6 +12,7 @@ using iText.Kernel.Pdf;
 using iText.Kernel.Pdf.Canvas;
 using iText.Kernel.Pdf.Canvas.Draw;
 using iText.Kernel.Pdf.Event;
+using iText.Layout;
 using iText.Layout.Borders;
 using iText.Layout.Element;
 using iText.Layout.Properties;
@@ -3343,6 +3344,1021 @@ int userId)
 
             return true;
         }
+
+        public async Task<int> SaveEmployeeOfferLetterAsync(EmployeeOfferLetterDto dto)
+        {
+            using var tx = await _unitOfWork.BeginTransactionAsync();
+
+            try
+            {
+                var repo = _unitOfWork.Repository<EmployeeOfferLetter>();
+
+                var entity = new EmployeeOfferLetter
+                {
+                    CompanyId = dto.CompanyId,
+                    RegionId = dto.RegionId,
+                    UserId = dto.UserId,
+                    EmployeeId = dto.EmployeeId,
+                    EmployeeCode = dto.EmployeeCode,
+                    EmployeeName = dto.EmployeeName,
+                    Email = dto.Email,
+                    Department = dto.Department,
+                    Designation = dto.Designation,
+                    AnnualPackage = dto.AnnualPackage,
+                    JoiningDate = DateOnly.FromDateTime(dto.JoiningDate),
+                    OfferLetterPath = dto.OfferLetterPath,
+                    IsSent = false,
+                    CreatedBy = dto.UserId,
+                    CreatedAt = DateTime.Now
+                };
+
+                await repo.AddAsync(entity);
+
+                await _unitOfWork.CompleteAsync();
+
+                // Identity value is available after CompleteAsync()
+                int offerLetterId = entity.EmployeeOfferLetterId;
+
+                await tx.CommitAsync();
+
+                return offerLetterId;
+            }
+            catch
+            {
+                await tx.RollbackAsync();
+                throw;
+            }
+        }
+        public async Task<bool> SendEmployeeOfferLetterAsync(int employeeOfferLetterId)
+        {
+            //======================================================
+            // Repository
+            //======================================================
+
+            var repo = _unitOfWork.Repository<EmployeeOfferLetter>();
+
+            var employeeOffer = await repo.GetByIdAsync(employeeOfferLetterId);
+
+            if (employeeOffer == null)
+                throw new Exception("Employee Offer Letter not found");
+
+            //======================================================
+            // Company
+            //======================================================
+
+            var company = _hRMSContext.Companies
+                .Where(x => x.CompanyId == employeeOffer.CompanyId)
+                .Select(x => new
+                {
+                    x.CompanyId,
+                    x.CompanyName,
+                    x.CompanyLogo
+                })
+                .FirstOrDefault();
+
+            if (company == null)
+                throw new Exception("Company not found");
+
+            //======================================================
+            // PDF Folder
+            //======================================================
+
+            string folder = Path.Combine(
+                Directory.GetCurrentDirectory(),
+                "wwwroot",
+                "Uploads",
+                "EmployeeOfferLetters"
+            );
+
+            if (!Directory.Exists(folder))
+            {
+                Directory.CreateDirectory(folder);
+            }
+
+            //======================================================
+            // File Name
+            //======================================================
+
+            string safeName = employeeOffer.EmployeeName!
+                .Replace(" ", "_");
+
+            string fileName =
+                $"Offer_{safeName}_{employeeOffer.EmployeeOfferLetterId}_{DateTime.Now:yyyyMMddHHmmss}.pdf";
+
+            string fullPath = Path.Combine(folder, fileName);
+
+            //======================================================
+            // Generate PDF
+            //======================================================
+
+            using (var writer = new PdfWriter(fullPath))
+            using (var pdf = new PdfDocument(writer))
+            using (var document = new Document(pdf))
+            {
+                document.SetMargins(40, 40, 40, 40);
+
+                //========================================================
+                // Fonts
+                //========================================================
+
+                PdfFont normalFont =
+                    PdfFontFactory.CreateFont(StandardFonts.HELVETICA);
+
+                PdfFont boldFont =
+                    PdfFontFactory.CreateFont(StandardFonts.HELVETICA_BOLD);
+
+                PdfFont italicFont =
+                    PdfFontFactory.CreateFont(StandardFonts.HELVETICA_OBLIQUE);
+
+                //========================================================
+                // HEADER TABLE
+                //========================================================
+
+                Table headerTable = new Table(
+                    UnitValue.CreatePercentArray(new float[] { 1, 3 }))
+                    .UseAllAvailableWidth();
+
+                //--------------------------------------------------------
+                // COMPANY LOGO
+                //--------------------------------------------------------
+
+                Cell logoCell = new Cell()
+                    .SetBorder(Border.NO_BORDER);
+
+                try
+                {
+                    if (!string.IsNullOrWhiteSpace(company.CompanyLogo))
+                    {
+                        string base64 = company.CompanyLogo;
+
+                        if (base64.Contains(","))
+                            base64 = base64.Substring(base64.IndexOf(",") + 1);
+
+                        byte[] imageBytes = Convert.FromBase64String(base64);
+
+                        var image = new Image(
+                            ImageDataFactory.Create(imageBytes))
+                            .ScaleToFit(110, 70);
+
+                        logoCell.Add(image);
+                    }
+                }
+                catch
+                {
+                    // Ignore invalid logo
+                }
+
+                headerTable.AddCell(logoCell);
+
+                //--------------------------------------------------------
+                // COMPANY DETAILS
+                //--------------------------------------------------------
+
+                Cell companyCell = new Cell()
+                    .SetBorder(Border.NO_BORDER)
+                    .SetTextAlignment(TextAlignment.RIGHT);
+
+                companyCell.Add(
+
+                    new Paragraph(company.CompanyName)
+
+                    .SetFont(boldFont)
+
+                    .SetFontSize(22)
+
+                    .SetFontColor(new DeviceRgb(22, 49, 91))
+
+                );
+
+                companyCell.Add(
+
+                    new Paragraph("Hyderabad, Telangana, India")
+
+                    .SetFont(normalFont)
+
+                    .SetFontSize(10)
+
+                );
+
+                companyCell.Add(
+
+                    new Paragraph("www.companywebsite.com")
+
+                    .SetFont(italicFont)
+
+                    .SetFontSize(9)
+
+                    .SetFontColor(ColorConstants.GRAY)
+
+                );
+
+                companyCell.Add(
+
+                    new Paragraph("hr@company.com")
+
+                    .SetFont(normalFont)
+
+                    .SetFontSize(9)
+
+                    .SetFontColor(ColorConstants.GRAY)
+
+                );
+
+                headerTable.AddCell(companyCell);
+
+                document.Add(headerTable);
+
+                //--------------------------------------------------------
+                // LINE
+                //--------------------------------------------------------
+
+                document.Add(new Paragraph(" "));
+
+                document.Add(new LineSeparator(new SolidLine()));
+
+                document.Add(new Paragraph(" "));
+
+                //--------------------------------------------------------
+                // TITLE
+                //--------------------------------------------------------
+
+                document.Add(
+
+                    new Paragraph("APPOINTMENT LETTER")
+
+                    .SetFont(boldFont)
+
+                    .SetFontSize(24)
+
+                    .SetTextAlignment(TextAlignment.CENTER)
+
+                    .SetFontColor(new DeviceRgb(22, 49, 91))
+
+                );
+
+                document.Add(new Paragraph(" "));
+
+                //--------------------------------------------------------
+                // DATE
+                //--------------------------------------------------------
+
+                document.Add(
+
+                    new Paragraph($"Date : {DateTime.Now:dd.MM.yyyy}")
+
+                    .SetFont(normalFont)
+
+                    .SetFontSize(11)
+
+                    .SetTextAlignment(TextAlignment.RIGHT)
+
+                );
+
+                document.Add(new Paragraph(" "));
+
+                //--------------------------------------------------------
+                // GREETING
+                //--------------------------------------------------------
+
+                document.Add(
+
+                    new Paragraph($"Dear {employeeOffer.EmployeeName},")
+
+                    .SetFont(normalFont)
+
+                    .SetFontSize(11)
+
+                );
+
+                document.Add(new Paragraph(" "));
+
+                document.Add(
+
+                    new Paragraph("Congratulations!")
+
+                    .SetFont(boldFont)
+
+                    .SetFontSize(12)
+
+                );
+
+                document.Add(new Paragraph(" "));
+
+                //--------------------------------------------------------
+                // INTRODUCTION
+                //--------------------------------------------------------
+
+                document.Add(
+
+                    new Paragraph(
+
+                    $"This refers to your application and subsequent interview. " +
+
+                    $"We are pleased to convey through this Appointment Letter " +
+
+                    $"that you have been selected as {employeeOffer.Designation} " +
+
+                    $"with {company.CompanyName}. " +
+
+                    $"We take pleasure in offering you employment under the following " +
+
+                    $"terms and conditions.")
+
+                    .SetFont(normalFont)
+
+                    .SetFontSize(11)
+
+                    .SetTextAlignment(TextAlignment.JUSTIFIED)
+
+                    .SetMultipliedLeading(1.4f)
+
+                );
+
+                document.Add(new Paragraph(" "));
+
+                //--------------------------------------------------------
+                // CLAUSE 1
+                //--------------------------------------------------------
+
+                document.Add(
+
+                    new Paragraph(
+
+                    $"1. Your total annual compensation (CTC) shall be ₹ {employeeOffer.AnnualPackage:N2} per annum, inclusive of all applicable benefits and taxes.")
+
+                    .SetFont(normalFont)
+
+                    .SetFontSize(11)
+
+                    .SetTextAlignment(TextAlignment.JUSTIFIED)
+
+                    .SetMultipliedLeading(1.4f)
+
+                );
+
+                document.Add(new Paragraph(" "));
+
+                //--------------------------------------------------------
+                // CLAUSE 2
+                //--------------------------------------------------------
+
+                document.Add(
+
+                    new Paragraph(
+
+                    $"2. Your base location will be Hyderabad, India and you are requested to join on {employeeOffer.JoiningDate:dd MMMM yyyy}.")
+
+                    .SetFont(normalFont)
+
+                    .SetFontSize(11)
+
+                    .SetTextAlignment(TextAlignment.JUSTIFIED)
+
+                    .SetMultipliedLeading(1.4f)
+
+                );
+
+                document.Add(new Paragraph(" "));
+
+                //--------------------------------------------------------
+                // CLAUSE 3
+                //--------------------------------------------------------
+
+                document.Add(
+
+                    new Paragraph(
+
+                    "3. Your working hours shall be as per company policy. The company presently follows a five-day work week. Working hours may change based on business requirements.")
+
+                    .SetFont(normalFont)
+
+                    .SetFontSize(11)
+
+                    .SetTextAlignment(TextAlignment.JUSTIFIED)
+
+                    .SetMultipliedLeading(1.4f)
+
+                );
+
+                document.Add(new Paragraph(" "));
+
+                //--------------------------------------------------------
+                // CLAUSE 4
+                //--------------------------------------------------------
+
+                document.Add(
+
+                    new Paragraph(
+
+                    "4. On your joining date you are required to submit all educational, identity and employment documents. Submission of these documents is mandatory for employment verification and onboarding.")
+
+                    .SetFont(normalFont)
+
+                    .SetFontSize(11)
+
+                    .SetTextAlignment(TextAlignment.JUSTIFIED)
+
+                    .SetMultipliedLeading(1.4f)
+
+                );
+
+                document.Add(new Paragraph(" "));
+
+                //========================================================
+                // CLAUSE 5
+                //========================================================
+
+                document.Add(
+
+                    new Paragraph(
+
+                    "5. During your employment, you shall devote your full working time, attention and abilities to the duties assigned to you. You shall faithfully serve the Company and shall not engage in any other employment, business or profession without obtaining prior written approval from the Management.")
+
+                    .SetFont(normalFont)
+
+                    .SetFontSize(11)
+
+                    .SetTextAlignment(TextAlignment.JUSTIFIED)
+
+                    .SetMultipliedLeading(1.4f)
+
+                );
+
+                document.Add(new Paragraph(" "));
+
+                //========================================================
+                // CLAUSE 6
+                //========================================================
+
+                document.Add(
+
+                    new Paragraph(
+
+                    "6. All information, documents, software, source code, client data, business strategies and other confidential material obtained during the course of your employment shall remain the exclusive property of the Company. You shall maintain strict confidentiality both during and after cessation of employment.")
+
+                    .SetFont(normalFont)
+
+                    .SetFontSize(11)
+
+                    .SetTextAlignment(TextAlignment.JUSTIFIED)
+
+                    .SetMultipliedLeading(1.4f)
+
+                );
+
+                document.Add(new Paragraph(" "));
+
+                //========================================================
+                // CLAUSE 7
+                //========================================================
+
+                document.Add(
+
+                    new Paragraph(
+
+                    "7. Your employment shall initially be on probation for a period of six (6) months from your date of joining. During the probation period, your performance, conduct and suitability for the role will be continuously evaluated. Upon successful completion of probation, your services may be confirmed in writing by the Company.")
+
+                    .SetFont(normalFont)
+
+                    .SetFontSize(11)
+
+                    .SetTextAlignment(TextAlignment.JUSTIFIED)
+
+                    .SetMultipliedLeading(1.4f)
+
+                );
+
+                document.Add(new Paragraph(" "));
+
+                //========================================================
+                // CLAUSE 8
+                //========================================================
+
+                document.Add(
+
+                    new Paragraph(
+
+                    "8. Either party may terminate this employment by providing thirty (30) days written notice or salary in lieu of such notice, subject to Company policy. The Company reserves the right to relieve you immediately after settlement of all dues and return of Company assets.")
+
+                    .SetFont(normalFont)
+
+                    .SetFontSize(11)
+
+                    .SetTextAlignment(TextAlignment.JUSTIFIED)
+
+                    .SetMultipliedLeading(1.4f)
+
+                );
+
+                document.Add(new Paragraph(" "));
+
+                //========================================================
+                // FINAL PARAGRAPH
+                //========================================================
+
+                document.Add(
+
+                    new Paragraph(
+
+                    "We welcome you to the organization and are confident that your knowledge, dedication and professional commitment will contribute significantly to the continued growth and success of the Company. We wish you a long, successful and rewarding career with us.")
+
+                    .SetFont(normalFont)
+
+                    .SetFontSize(11)
+
+                    .SetTextAlignment(TextAlignment.JUSTIFIED)
+
+                    .SetMultipliedLeading(1.5f)
+
+                );
+
+                document.Add(new Paragraph(" "));
+                //========================================================
+                // CLAUSE 9
+                //========================================================
+
+                document.Add(
+
+                    new Paragraph(
+
+                    "9. You shall comply with all Company policies, rules, regulations and code of conduct as amended from time to time. Any violation of these policies may result in disciplinary action, including termination of employment.")
+
+                    .SetFont(normalFont)
+
+                    .SetFontSize(11)
+
+                    .SetTextAlignment(TextAlignment.JUSTIFIED)
+
+                    .SetMultipliedLeading(1.4f)
+
+                );
+
+                document.Add(new Paragraph(" "));
+
+                //========================================================
+                // CLAUSE 10
+                //========================================================
+
+                document.Add(
+
+                    new Paragraph(
+
+                    "10. You are expected to maintain the highest standards of integrity, ethics and professional behaviour while dealing with clients, vendors, fellow employees and other stakeholders of the Company.")
+
+                    .SetFont(normalFont)
+
+                    .SetFontSize(11)
+
+                    .SetTextAlignment(TextAlignment.JUSTIFIED)
+
+                    .SetMultipliedLeading(1.4f)
+
+                );
+
+                document.Add(new Paragraph(" "));
+
+                //========================================================
+                // CLAUSE 11
+                //========================================================
+
+                document.Add(
+
+                    new Paragraph(
+
+                    "11. Any invention, software, design, process, document, report or intellectual property developed by you during the course of your employment shall remain the exclusive property of the Company unless otherwise agreed in writing.")
+
+                    .SetFont(normalFont)
+
+                    .SetFontSize(11)
+
+                    .SetTextAlignment(TextAlignment.JUSTIFIED)
+
+                    .SetMultipliedLeading(1.4f)
+
+                );
+
+                document.Add(new Paragraph(" "));
+
+                //========================================================
+                // CLAUSE 12
+                //========================================================
+
+                document.Add(
+
+                    new Paragraph(
+
+                    "12. This Appointment Letter shall be governed by the laws of India. Any disputes arising out of your employment shall be subject to the jurisdiction of the courts at Hyderabad, Telangana.")
+
+                    .SetFont(normalFont)
+
+                    .SetFontSize(11)
+
+                    .SetTextAlignment(TextAlignment.JUSTIFIED)
+
+                    .SetMultipliedLeading(1.4f)
+
+                );
+
+                document.Add(new Paragraph(" "));
+
+                //========================================================
+                // REQUIRED DOCUMENTS TITLE
+                //========================================================
+
+                document.Add(
+
+                    new Paragraph("Documents Required at the Time of Joining")
+
+                    .SetFont(boldFont)
+
+                    .SetFontSize(14)
+
+                    .SetFontColor(new DeviceRgb(22, 49, 91))
+
+                );
+
+                document.Add(new Paragraph(" "));
+
+                //========================================================
+                // REQUIRED DOCUMENTS
+                //========================================================
+
+                string[] documents =
+                {
+    "1. Passport Size Photographs (4 Copies)",
+    "2. Aadhaar Card / Passport / Driving Licence (Identity Proof)",
+    "3. PAN Card",
+    "4. Educational Certificates (10th, Intermediate, Graduation, Post Graduation if applicable)",
+    "5. Previous Employment Experience Letters",
+    "6. Relieving Letter from Previous Employer",
+    "7. Last Three Months Salary Slips",
+    "8. Bank Passbook or Cancelled Cheque",
+    "9. Address Proof",
+    "10. Updated Resume"
+};
+
+                foreach (string item in documents)
+                {
+                    document.Add(
+
+                        new Paragraph(item)
+
+                        .SetFont(normalFont)
+
+                        .SetFontSize(11)
+
+                        .SetMarginLeft(15)
+
+                        .SetMultipliedLeading(1.3f)
+
+                    );
+                }
+
+                document.Add(new Paragraph(" "));
+
+                //========================================================
+                // NOTE
+                //========================================================
+
+                document.Add(
+
+                    new Paragraph(
+
+                    "Please ensure that all the above documents are submitted on your date of joining. Failure to provide the required documents may delay your onboarding process.")
+
+                    .SetFont(italicFont)
+
+                    .SetFontSize(10)
+
+                    .SetFontColor(ColorConstants.DARK_GRAY)
+
+                    .SetTextAlignment(TextAlignment.JUSTIFIED)
+
+                );
+
+                document.Add(new Paragraph(" "));
+                //========================================================
+                // CLOSING PARAGRAPH
+                //========================================================
+
+                document.Add(
+
+                    new Paragraph(
+
+                    "Kindly sign and return a copy of this Appointment Letter as a token of your acceptance of the above terms and conditions. We look forward to a long, successful and mutually rewarding association with you.")
+
+                    .SetFont(normalFont)
+
+                    .SetFontSize(11)
+
+                    .SetTextAlignment(TextAlignment.JUSTIFIED)
+
+                    .SetMultipliedLeading(1.5f)
+
+                );
+
+                document.Add(new Paragraph(" "));
+                document.Add(new Paragraph(" "));
+
+                //========================================================
+                // SIGNATURE TABLE
+                //========================================================
+
+                Table signatureTable = new Table(
+                    UnitValue.CreatePercentArray(new float[] { 1, 1 }))
+                    .UseAllAvailableWidth();
+
+                Cell left = new Cell()
+                    .SetBorder(Border.NO_BORDER);
+
+                left.Add(
+
+                    new Paragraph($"For {company.CompanyName}")
+
+                    .SetFont(boldFont)
+
+                    .SetFontSize(12)
+
+                );
+
+                left.Add(new Paragraph(" "));
+                left.Add(new Paragraph(" "));
+                left.Add(new Paragraph(" "));
+
+                left.Add(
+
+                    new Paragraph("Authorized Signatory")
+
+                    .SetFont(normalFont)
+
+                    .SetFontSize(11)
+
+                );
+
+                signatureTable.AddCell(left);
+
+                Cell right = new Cell()
+                    .SetBorder(Border.NO_BORDER);
+
+                right.Add(
+
+                    new Paragraph("Employee")
+
+                    .SetFont(boldFont)
+
+                    .SetFontSize(12)
+
+                );
+
+                right.Add(new Paragraph(" "));
+                right.Add(new Paragraph(" "));
+                right.Add(new Paragraph(" "));
+
+                right.Add(
+
+                    new Paragraph(employeeOffer.EmployeeName)
+
+                    .SetFont(normalFont)
+
+                    .SetFontSize(11)
+
+                );
+
+                signatureTable.AddCell(right);
+
+                document.Add(signatureTable);
+
+                document.Add(new Paragraph(" "));
+                document.Add(new Paragraph(" "));
+
+                //========================================================
+                // EMPLOYEE ACKNOWLEDGEMENT
+                //========================================================
+
+                document.Add(
+
+                    new Paragraph("EMPLOYEE ACKNOWLEDGEMENT")
+
+                    .SetFont(boldFont)
+
+                    .SetFontSize(15)
+
+                    .SetFontColor(new DeviceRgb(22, 49, 91))
+
+                );
+
+                document.Add(new Paragraph(" "));
+
+                document.Add(
+
+                    new Paragraph(
+
+                    $"I, {employeeOffer.EmployeeName}, hereby acknowledge that I have carefully read, understood and accepted all the terms and conditions mentioned in this Appointment Letter. I agree to abide by the Company's policies and procedures throughout my employment.")
+
+                    .SetFont(normalFont)
+
+                    .SetFontSize(11)
+
+                    .SetTextAlignment(TextAlignment.JUSTIFIED)
+
+                    .SetMultipliedLeading(1.5f)
+
+                );
+
+                document.Add(new Paragraph(" "));
+                document.Add(new Paragraph(" "));
+                document.Add(new Paragraph(" "));
+
+                //========================================================
+                // ACKNOWLEDGEMENT TABLE
+                //========================================================
+
+                Table acceptTable = new Table(
+                    UnitValue.CreatePercentArray(new float[] { 1, 1 }))
+                    .UseAllAvailableWidth();
+
+                acceptTable.AddCell(
+
+                    new Cell()
+
+                    .SetBorder(Border.NO_BORDER)
+
+                    .Add(new Paragraph("Employee Signature"))
+
+                );
+
+                acceptTable.AddCell(
+
+                    new Cell()
+
+                    .SetBorder(Border.NO_BORDER)
+
+                    .Add(new Paragraph("Date"))
+
+                );
+
+                acceptTable.AddCell(
+
+                    new Cell()
+
+                    .SetBorder(Border.NO_BORDER)
+
+                    .SetHeight(45)
+
+                );
+
+                acceptTable.AddCell(
+
+                    new Cell()
+
+                    .SetBorder(Border.NO_BORDER)
+
+                    .SetHeight(45)
+
+                );
+
+                document.Add(acceptTable);
+
+                document.Add(new Paragraph(" "));
+                document.Add(new Paragraph(" "));
+
+                //========================================================
+                // FOOTER LINE
+                //========================================================
+
+                document.Add(
+
+                    new LineSeparator(new SolidLine())
+
+                );
+
+                document.Add(new Paragraph(" "));
+
+                //========================================================
+                // FOOTER
+                //========================================================
+
+                document.Add(
+
+                    new Paragraph($"{company.CompanyName}")
+
+                    .SetFont(boldFont)
+
+                    .SetFontSize(10)
+
+                    .SetTextAlignment(TextAlignment.CENTER)
+
+                );
+
+                document.Add(
+
+                    new Paragraph("Human Resources Department")
+
+                    .SetFont(normalFont)
+
+                    .SetFontSize(9)
+
+                    .SetTextAlignment(TextAlignment.CENTER)
+
+                );
+
+                document.Add(
+
+                    new Paragraph("This is a system generated Appointment Letter and does not require a physical signature.")
+
+                    .SetFont(italicFont)
+
+                    .SetFontSize(8)
+
+                    .SetFontColor(ColorConstants.GRAY)
+
+                    .SetTextAlignment(TextAlignment.CENTER)
+
+                );
+            }
+
+            //======================================================
+            // Update DB
+            //======================================================
+
+            employeeOffer.OfferLetterPath =
+                $"Uploads/EmployeeOfferLetters/{fileName}";
+
+            employeeOffer.IsSent = true;
+
+            employeeOffer.ModifiedAt = DateTime.Now;
+
+            repo.Update(employeeOffer);
+
+            await _unitOfWork.CompleteAsync();
+
+            //======================================================
+            // Email
+            //======================================================
+
+            string subject = "Employment Offer Letter";
+
+            string body = $@"
+    <html>
+    <body>
+
+    <p>Dear {employeeOffer.EmployeeName},</p>
+
+    <p>
+    Congratulations!!
+    </p>
+
+    <p>
+    We are pleased to offer you employment with
+    <strong>{company.CompanyName}</strong>.
+    </p>
+
+    <p>
+    Please find your Offer Letter attached.
+    </p>
+
+    <br/>
+
+    <p>
+    Regards,<br/>
+    HR Department
+    </p>
+
+    </body>
+    </html>";
+
+            await _emailService.SendEmailAsync(
+                employeeOffer.Email!,
+                subject,
+                body,
+                null,
+                new List<string> { fullPath }
+            );
+
+            return true;
+        }
+        //private Cell GetLabelCell(string text, PdfFont boldFont)
+        //{
+        //    return new Cell()
+        //        .Add(
+        //            new Paragraph(text)
+        //            .SetFont(boldFont)
+        //            .SetFontSize(11)
+        //        )
+        //        .SetBackgroundColor(new DeviceRgb(240, 240, 240))
+        //        .SetPadding(6);
+        //}
+
+        //private Cell GetValueCell(string text, PdfFont normalFont)
+        //{
+        //    return new Cell()
+        //        .Add(
+        //            new Paragraph(text ?? "")
+        //            .SetFont(normalFont)
+        //            .SetFontSize(11)
+        //        )
+        //        .SetPadding(6);
+        //}
 
     }
 }
