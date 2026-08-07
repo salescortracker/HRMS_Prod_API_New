@@ -1516,7 +1516,8 @@ namespace BusinessLayer.Implementations
                     EmployeeName = string.Join(",", x.EmployeeFormEmployees.Select(e => e.EmployeeName)),
 
                     FileNames = x.EmployeeFormFiles.Select(f => f.FileName).ToList(),
-                    FilePaths = x.EmployeeFormFiles.Select(f => f.FilePath).ToList()
+                    FilePaths = x.EmployeeFormFiles.Select(f => f.FilePath).ToList(),
+                    Status = x.Status
                 })
                 .ToListAsync();
         }
