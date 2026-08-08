@@ -17,5 +17,6 @@ namespace BusinessLayer.DTOs
         public string UserFullName { get; set; }
         public string Status { get; set; }
         public int ExpenseCategoryId { get; set; }     // ✅ REQUIRED
+        public string? ReceiptPath { get; set; }
     }
 }
