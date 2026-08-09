@@ -259,7 +259,8 @@ namespace BusinessLayer.Implementations
                     Amount = e.Amount,
                     ExpenseDate = e.ExpenseDate.Value.ToDateTime(TimeOnly.MinValue),
                     UserFullName = u.FullName,
-                    Status = e.Status
+                    Status = e.Status,
+                    ReceiptPath = e.ReceiptPath
                 }
             ).ToListAsync();
         }
