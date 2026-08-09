@@ -35,7 +35,7 @@ namespace BusinessLayer.Interfaces
         Task<bool> DeleteImmigrationAsync(int id);
 
         Task<List<VisaTypeMasterDto>> GetVisaTypesAsync(int companyId, int regionId);
-        //Task<List<WorkAuthStatusDto>> GetStatusListAsync();
+        Task<List<WorkAuthStatusDto>> GetStatusListAsync();
         Task<List<WorkAuthStatusDto>> GetStatusByUserIdAsync(int userId);
         Task<List<WorkAuthStatusDto>> GetStatusByCompanyRegionAsync(int companyId, int regionId);
         Task<WorkAuthStatusDto> CreateStatusAsync(WorkAuthStatusDto dto);

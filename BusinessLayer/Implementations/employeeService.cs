@@ -858,18 +858,18 @@ namespace BusinessLayer.Implementations
         }
 
 
-        //public async Task<List<WorkAuthStatusDto>> GetStatusListAsync()
-        //{
-        //    return await _context.WorkAuthStatusMasters
-        //        .Select(s => new WorkAuthStatusDto
-        //        {
-        //            StatusId = s.StatusId,
-        //            CompanyId = s.CompanyId,
-        //            RegionId = s.RegionId,
-        //            StatusName = s.StatusName
-        //        })
-        //        .ToListAsync();
-        //}
+        public async Task<List<WorkAuthStatusDto>> GetStatusListAsync()
+        {
+            return await _context.WorkAuthStatusMasters
+                .Select(s => new WorkAuthStatusDto
+                {
+                    StatusId = s.StatusId,
+                    CompanyId = s.CompanyId,
+                    RegionId = s.RegionId,
+                    StatusName = s.StatusName
+                })
+                .ToListAsync();
+        }
 
         public async Task<List<WorkAuthStatusDto>> GetStatusByUserIdAsync(int userId)
         {

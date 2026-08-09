@@ -874,27 +874,27 @@ public class UpdateResignationStatusRequest
             return Ok(response);
         }
 
-        //[HttpGet("GetStatusesByCompanyRegion")]
-        //public async Task<IActionResult> GetStatusesByCompanyRegion(int companyId, int regionId)
-        //{
-        //    var list = await _employeeService.GetStatusByCompanyRegionAsync(companyId, regionId);
-        //    return Ok(list);
-        //}
+        [HttpGet("GetStatusesByCompanyRegion")]
+        public async Task<IActionResult> GetStatusesByCompanyRegion(int companyId, int regionId)
+        {
+            var list = await _employeeService.GetStatusByCompanyRegionAsync(companyId, regionId);
+            return Ok(list);
+        }
 
-        //[HttpGet("GetStatuses")]
-        //public async Task<IActionResult> GetStatuses()
-        //{
-        //    var list = await _employeeService.GetStatusListAsync();
-        //    var response = list.
-        //Select(s => new
-        //{
-        //    statusId = s.StatusId,
-        //    statusName = s.StatusName
-        //})
-        //.ToList();
+        [HttpGet("GetStatuses")]
+        public async Task<IActionResult> GetStatuses()
+        {
+            var list = await _employeeService.GetStatusListAsync();
+            var response = list.
+        Select(s => new
+        {
+            statusId = s.StatusId,
+            statusName = s.StatusName
+        })
+        .ToList();
 
-        //    return Ok(response);
-        //}
+            return Ok(response);
+        }
 
         //[HttpGet("GetStatuses")]
         //public async Task<IActionResult> GetStatuses(int userId)
