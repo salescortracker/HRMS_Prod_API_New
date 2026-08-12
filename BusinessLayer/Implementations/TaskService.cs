@@ -10,11 +10,13 @@ namespace BusinessLayer.Implementations
     {
         private readonly IUnitOfWork _unitOfWork;
         private readonly IEmailService _emailService;
+        private readonly INotificationService _notificationService;
 
-        public TaskService(IUnitOfWork unitOfWork, IEmailService emailService)
+        public TaskService(IUnitOfWork unitOfWork, IEmailService emailService, INotificationService notificationService)
         {
             _unitOfWork = unitOfWork;
             _emailService = emailService;
+            _notificationService = notificationService;
         }
 
         public async Task<ApiResponse<IEnumerable<TaskDto>>> GetAll(int userId)
@@ -99,14 +101,14 @@ namespace BusinessLayer.Implementations
             var assignedUser = await _unitOfWork.Repository<User>()
                 .FindAsync(x => x.FullName == dto.AssignedTo);
             var projectName = await _unitOfWork.Repository<ProjectMaster>()
-    .FindAsync(x => x.ProjectMasterId == dto.ProjectId);
+                .FindAsync(x => x.ProjectMasterId == dto.ProjectId);
 
-var project = projectName.FirstOrDefault()?.ProjectName ?? "N/A";
+            var project = projectName.FirstOrDefault()?.ProjectName ?? "N/A";
 
-var priorityName = await _unitOfWork.Repository<Priority>()
-    .FindAsync(x => x.PriorityId == dto.PriorityId);
+            var priorityName = await _unitOfWork.Repository<Priority>()
+                .FindAsync(x => x.PriorityId == dto.PriorityId);
 
-var priority = priorityName.FirstOrDefault()?.PriorityName ?? "N/A";
+            var priority = priorityName.FirstOrDefault()?.PriorityName ?? "N/A";
 
             var emp = assignedUser.FirstOrDefault();
 
@@ -168,6 +170,16 @@ var priority = priorityName.FirstOrDefault()?.PriorityName ?? "N/A";
                     "New Task Assigned",
                     body
                 );
+                if (emp != null)
+                {
+                    await _notificationService.CreateNotificationAsync(
+                        new List<int> { emp.UserId },
+                        "New Task Assigned",
+                        $"A new task '{dto.TaskName}' has been assigned to you.",
+                        "Task",
+                        entity.TaskId
+                    );
+                }
             }
 
             // =========================
@@ -180,11 +192,11 @@ var priority = priorityName.FirstOrDefault()?.PriorityName ?? "N/A";
                 if (mentions.Count > 0)
                 {
                     var users = await _unitOfWork.Repository<User>()
-     .FindAsync(u =>
-         mentions.Any(m =>
-             u.FullName.ToLower().Contains(m.ToLower())
-         )
-     );
+                     .FindAsync(u =>
+                         mentions.Any(m =>
+                             u.FullName.ToLower().Contains(m.ToLower())
+                         )
+                     );
 
                     foreach (var user in users)
                     {
@@ -302,13 +314,12 @@ var priority = priorityName.FirstOrDefault()?.PriorityName ?? "N/A";
                 var manager = await _unitOfWork.Repository<User>()
                     .GetByIdAsync(assignedEmployee.ReportingTo.Value);
 
-
                 var statusName = await _unitOfWork.Repository<DataAccessLayer.DBContext.TaskStatus>()
-    .FindAsync(x => x.TaskStatusId == dto.StatusId);
+                    .FindAsync(x => x.TaskStatusId == dto.StatusId);
 
                 var status = statusName.FirstOrDefault()?.TaskStatusName ?? "N/A";
 
-                if (manager != null && !string.IsNullOrEmpty(manager.Email))
+                if (manager != null)
                 {
                     var project = (await _unitOfWork.Repository<ProjectMaster>()
                         .FindAsync(x => x.ProjectMasterId == dto.ProjectId))
@@ -318,52 +329,182 @@ var priority = priorityName.FirstOrDefault()?.PriorityName ?? "N/A";
                         .FindAsync(x => x.PriorityId == dto.PriorityId))
                         .FirstOrDefault()?.PriorityName ?? "N/A";
 
-                    var body = $@"
+
+                    // =========================
+                    // EMAIL TO MANAGER
+                    // =========================
+                    if (!string.IsNullOrEmpty(manager.Email))
+                    {
+                        var body = $@"
+                <html>
+                <body style='font-family: Arial, Helvetica, sans-serif; color:#333;'>
+
+                    <h2 style='color:#198754;'>Task Update Notification</h2>
+
+                    <p>Dear <b>{manager.FullName}</b>,</p>
+
+                    <p>
+                        This is to inform you that the following task has been updated by
+                        <b>{assignedEmployee.FullName}</b>.
+                    </p>
+
+                    <table style='border-collapse:collapse; width:100%; max-width:650px;'>
+
+                        <tr>
+                            <td style='padding:8px; border:1px solid #ddd;'>
+                                <b>Employee</b>
+                            </td>
+                            <td style='padding:8px; border:1px solid #ddd;'>
+                                {assignedEmployee.FullName}
+                            </td>
+                        </tr>
+
+                        <tr>
+                            <td style='padding:8px; border:1px solid #ddd;'>
+                                <b>Task Name</b>
+                            </td>
+                            <td style='padding:8px; border:1px solid #ddd;'>
+                                {dto.TaskName}
+                            </td>
+                        </tr>
+
+                        <tr>
+                            <td style='padding:8px; border:1px solid #ddd;'>
+                                <b>Project</b>
+                            </td>
+                            <td style='padding:8px; border:1px solid #ddd;'>
+                                {project}
+                            </td>
+                        </tr>
+
+                        <tr>
+                            <td style='padding:8px; border:1px solid #ddd;'>
+                                <b>Priority</b>
+                            </td>
+                            <td style='padding:8px; border:1px solid #ddd;'>
+                                {priority}
+                            </td>
+                        </tr>
+
+                        <tr>
+                            <td style='padding:8px; border:1px solid #ddd;'>
+                                <b>Status</b>
+                            </td>
+                            <td style='padding:8px; border:1px solid #ddd;'>
+                                {status}
+                            </td>
+                        </tr>
+
+                        <tr>
+                            <td style='padding:8px; border:1px solid #ddd;'>
+                                <b>Comments</b>
+                            </td>
+                            <td style='padding:8px; border:1px solid #ddd;'>
+                                {dto.Comment}
+                            </td>
+                        </tr>
+
+                        <tr>
+                            <td style='padding:8px; border:1px solid #ddd;'>
+                                <b>Updated On</b>
+                            </td>
+                            <td style='padding:8px; border:1px solid #ddd;'>
+                                {DateTime.Now:dd-MMM-yyyy hh:mm tt}
+                            </td>
+                        </tr>
+
+                    </table>
+
+                    <p style='margin-top:20px;'>
+                        Kindly review the updated task status and take any necessary action.
+                    </p>
+
+                    <p>
+                        Regards,<br/>
+                        <b>Task Management System</b>
+                    </p>
+
+                </body>
+                </html>";
+
+                        await _emailService.SendEmailAsync(
+                            manager.Email,
+                            "Task Updated by Employee",
+                            body);
+                    }
+
+
+                    // =========================
+                    // NOTIFICATION TO MANAGER
+                    // =========================
+
+                    await _notificationService.CreateNotificationAsync(
+                        new List<int>
+                        {
+                    manager.UserId
+                        },
+                        "Task Updated by Employee",
+                        $"{assignedEmployee.FullName} has updated the task '{dto.TaskName}'.",
+                        "Task",
+                        entity.TaskId
+                    );
+                }
+            }
+
+
+            // =========================
+            // EMAIL + NOTIFICATION IF TASK REASSIGNED
+            // =========================
+
+            if (oldAssigned != dto.AssignedTo)
+            {
+                var assignedUser = await _unitOfWork.Repository<User>()
+                    .FindAsync(x => x.FullName == dto.AssignedTo);
+
+                var emp = assignedUser.FirstOrDefault();
+
+                if (emp != null)
+                {
+                    // =========================
+                    // EMAIL TO NEW EMPLOYEE
+                    // =========================
+
+                    if (!string.IsNullOrEmpty(emp.Email))
+                    {
+                        await _emailService.SendEmailAsync(
+                            emp.Email,
+                            "Task Reassigned",
+                            $@"
                     <html>
                     <body style='font-family: Arial, Helvetica, sans-serif; color:#333;'>
 
-                        <h2 style='color:#198754;'>Task Update Notification</h2>
+                        <h2 style='color:#0d6efd;'>Task Reassigned</h2>
 
-                        <p>Dear <b>{manager.FullName}</b>,</p>
+                        <p>Dear <b>{emp.FullName}</b>,</p>
 
                         <p>
-                            This is to inform you that the following task has been updated by
-                            <b>{assignedEmployee.FullName}</b>.
+                            You have been assigned a new task.
                         </p>
 
-                        <table style='border-collapse:collapse; width:100%; max-width:650px;'>
-                            <tr>
-                                <td style='padding:8px; border:1px solid #ddd;'><b>Employee</b></td>
-                                <td style='padding:8px; border:1px solid #ddd;'>{assignedEmployee.FullName}</td>
-                            </tr>
-                            <tr>
-                                <td style='padding:8px; border:1px solid #ddd;'><b>Task Name</b></td>
-                                <td style='padding:8px; border:1px solid #ddd;'>{dto.TaskName}</td>
-                            </tr>
-                            <tr>
-                                <td style='padding:8px; border:1px solid #ddd;'><b>Project</b></td>
-                                <td style='padding:8px; border:1px solid #ddd;'>{project}</td>
-                            </tr>
-                            <tr>
-                                <td style='padding:8px; border:1px solid #ddd;'><b>Priority</b></td>
-                                <td style='padding:8px; border:1px solid #ddd;'>{priority}</td>
-                            </tr>
-                            <tr>
-                                <td style='padding:8px; border:1px solid #ddd;'><b>Status</b></td>
-                                <td style='padding:8px; border:1px solid #ddd;'>{status}</td>
-                            </tr>
-                            <tr>
-                                <td style='padding:8px; border:1px solid #ddd;'><b>Comments</b></td>
-                                <td style='padding:8px; border:1px solid #ddd;'>{dto.Comment}</td>
-                            </tr>
-                            <tr>
-                                <td style='padding:8px; border:1px solid #ddd;'><b>Updated On</b></td>
-                                <td style='padding:8px; border:1px solid #ddd;'>{DateTime.Now:dd-MMM-yyyy hh:mm tt}</td>
-                            </tr>
-                        </table>
+                        <p>
+                            <b>Task Name:</b> {dto.TaskName}
+                        </p>
 
-                        <p style='margin-top:20px;'>
-                            Kindly review the updated task status and take any necessary action.
+                        <p>
+                            <b>Start Date:</b> {dto.StartDate:dd-MMM-yyyy}
+                        </p>
+
+                        <p>
+                            <b>Due Date:</b> {dto.DueDate:dd-MMM-yyyy}
+                        </p>
+
+                        <p>
+                            <b>Comments:</b> {dto.Comment}
+                        </p>
+
+                        <p>
+                            Please log in to the Task Management portal
+                            to review the task.
                         </p>
 
                         <p>
@@ -372,39 +513,33 @@ var priority = priorityName.FirstOrDefault()?.PriorityName ?? "N/A";
                         </p>
 
                     </body>
-                    </html>";
-
-                    await _emailService.SendEmailAsync(
-                        manager.Email,
-                        "Task Updated by Employee",
-                        body);
-                }
-            }
+                    </html>"
+                        );
+                    }
 
 
-            // =========================
-            // EMAIL IF TASK REASSIGNED
-            // =========================
-            if (oldAssigned != dto.AssignedTo)
-            {
-                var assignedUser = await _unitOfWork.Repository<User>()
-                    .FindAsync(x => x.FullName == dto.AssignedTo);
+                    // =========================
+                    // NOTIFICATION TO NEW EMPLOYEE
+                    // =========================
 
-                var emp = assignedUser.FirstOrDefault();
-
-                if (emp != null && !string.IsNullOrEmpty(emp.Email))
-                {
-                    await _emailService.SendEmailAsync(
-                        emp.Email,
+                    await _notificationService.CreateNotificationAsync(
+                        new List<int>
+                        {
+                    emp.UserId
+                        },
                         "Task Reassigned",
-                        $"You have been assigned a new task: <b>{dto.TaskName}</b>"
+                        $"You have been assigned the task '{dto.TaskName}'.",
+                        "Task",
+                        entity.TaskId
                     );
                 }
             }
 
+
             // =========================
             // EMAIL FOR @MENTIONS
             // =========================
+
             if (!string.IsNullOrEmpty(dto.Comment))
             {
                 var mentions = ExtractMentions(dto.Comment);
@@ -412,11 +547,11 @@ var priority = priorityName.FirstOrDefault()?.PriorityName ?? "N/A";
                 if (mentions.Count > 0)
                 {
                     var users = await _unitOfWork.Repository<User>()
-      .FindAsync(u =>
-          mentions.Any(m =>
-              u.FullName.ToLower().Contains(m.ToLower())
-          )
-      );
+                        .FindAsync(u =>
+                            mentions.Any(m =>
+                                u.FullName.ToLower().Contains(m.ToLower())
+                            )
+                        );
 
                     foreach (var user in users)
                     {
@@ -426,9 +561,9 @@ var priority = priorityName.FirstOrDefault()?.PriorityName ?? "N/A";
                                 user.Email,
                                 "You were mentioned in a Task",
                                 $@"
-                            <h3>Task Comment Mention</h3>
-                            <p><b>Task:</b> {dto.TaskName}</p>
-                            <p><b>Comment:</b> {dto.Comment}</p>
+                        <h3>Task Comment Mention</h3>
+                        <p><b>Task:</b> {dto.TaskName}</p>
+                        <p><b>Comment:</b> {dto.Comment}</p>
                         "
                             );
                         }
@@ -436,20 +571,24 @@ var priority = priorityName.FirstOrDefault()?.PriorityName ?? "N/A";
                 }
             }
 
+
             // =========================
-            // DELETE FILES (your existing logic)
+            // DELETE FILES
             // =========================
+
             if (!string.IsNullOrEmpty(dto.DeletedFileIds))
             {
-                var deletedIds = System.Text.Json.JsonSerializer
-                    .Deserialize<List<int>>(dto.DeletedFileIds);
+                var deletedIds =
+                    System.Text.Json.JsonSerializer
+                        .Deserialize<List<int>>(dto.DeletedFileIds);
 
                 if (deletedIds != null && deletedIds.Count > 0)
                 {
                     foreach (var fileId in deletedIds)
                     {
-                        var fileEntity = await _unitOfWork.Repository<DataAccessLayer.DBContext.TaskFile>()
-                            .GetByIdAsync(fileId);
+                        var fileEntity =
+                            await _unitOfWork.Repository<DataAccessLayer.DBContext.TaskFile>()
+                                .GetByIdAsync(fileId);
 
                         if (fileEntity != null)
                         {
@@ -471,36 +610,49 @@ var priority = priorityName.FirstOrDefault()?.PriorityName ?? "N/A";
                 }
             }
 
+
             // =========================
-            // ADD NEW FILES (your existing logic)
+            // ADD NEW FILES
             // =========================
+
             if (dto.Files != null && dto.Files.Count > 0)
             {
-                string root = Path.Combine(Directory.GetCurrentDirectory(), "wwwroot");
-                string uploadPath = Path.Combine(root, "Uploads", "Tasks");
+                string root = Path.Combine(
+                    Directory.GetCurrentDirectory(),
+                    "wwwroot");
+
+                string uploadPath = Path.Combine(
+                    root,
+                    "Uploads",
+                    "Tasks");
 
                 if (!Directory.Exists(uploadPath))
                     Directory.CreateDirectory(uploadPath);
 
                 foreach (var file in dto.Files)
                 {
-                    string fileName = $"{Guid.NewGuid()}_{file.FileName}";
-                    string fullPath = Path.Combine(uploadPath, fileName);
+                    string fileName =
+                        $"{Guid.NewGuid()}_{file.FileName}";
 
-                    using (var stream = new FileStream(fullPath, FileMode.Create))
+                    string fullPath =
+                        Path.Combine(uploadPath, fileName);
+
+                    using (var stream =
+                        new FileStream(fullPath, FileMode.Create))
                     {
                         await file.CopyToAsync(stream);
                     }
 
-                    var taskFile = new DataAccessLayer.DBContext.TaskFile
-                    {
-                        TaskId = entity.TaskId,
-                        FileName = file.FileName,
-                        FilePath = $"Uploads/Tasks/{fileName}",
-                        FileType = file.ContentType,
-                        FileSize = file.Length,
-                        CreatedAt = DateTime.Now
-                    };
+                    var taskFile =
+                        new DataAccessLayer.DBContext.TaskFile
+                        {
+                            TaskId = entity.TaskId,
+                            FileName = file.FileName,
+                            FilePath = $"Uploads/Tasks/{fileName}",
+                            FileType = file.ContentType,
+                            FileSize = file.Length,
+                            CreatedAt = DateTime.Now
+                        };
 
                     await _unitOfWork.Repository<DataAccessLayer.DBContext.TaskFile>()
                         .AddAsync(taskFile);
@@ -508,6 +660,7 @@ var priority = priorityName.FirstOrDefault()?.PriorityName ?? "N/A";
 
                 await _unitOfWork.CompleteAsync();
             }
+
 
             return new ApiResponse<string>("Updated successfully");
         }
