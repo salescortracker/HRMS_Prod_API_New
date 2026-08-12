@@ -31,5 +31,6 @@ namespace BusinessLayer.DTOs
         public DateTime? ModifiedAt { get; set; }
         public string? EmployeeName { get; set; }
         public string? StructureName { get; set; }
+        public string FullName { get; set; }
     }
 }

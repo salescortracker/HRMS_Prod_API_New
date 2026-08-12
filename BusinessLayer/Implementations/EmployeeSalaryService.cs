@@ -28,6 +28,13 @@ namespace BusinessLayer.Implementations
                 {
                     EmployeeSalaryId = x.EmployeeSalaryId,
                     EmployeeId = x.EmployeeId,
+
+                    // Match EmployeeId with Users.UserId
+                    FullName = _context.Users
+                        .Where(u => u.UserId == x.EmployeeId)
+                        .Select(u => u.FullName)
+                        .FirstOrDefault(),
+
                     StructureId = x.StructureId,
                     EffectiveFrom = x.EffectiveFrom,
                     CTC = x.Ctc,

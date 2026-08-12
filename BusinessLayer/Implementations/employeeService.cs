@@ -2015,6 +2015,7 @@ namespace BusinessLayer.Implementations
             await _context.SaveChangesAsync();
             return true;
         }
+
         public async Task<IEnumerable<EmployeeLetterDto>> getLettersForEmployeeAsync(string employeeCode, int companyId, int regionId)
         {
             return await _context.EmployeeLetters
@@ -2040,7 +2041,9 @@ namespace BusinessLayer.Implementations
                         x.EmployeeLetterEmployees.Select(e => e.EmployeeName)),
 
                     FileName = string.Join(",",
-                        x.EmployeeLetterFiles.Select(f => f.FileName))
+                        x.EmployeeLetterFiles.Select(f => f.FileName)),
+                    FilePath = string.Join(",",
+                        x.EmployeeLetterFiles.Select(f => f.FilePath))
                 })
                 .OrderByDescending(x => x.Id)
                 .ToListAsync();
