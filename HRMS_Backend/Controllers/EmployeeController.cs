@@ -26,7 +26,8 @@ namespace HRMS_Backend.Controllers
         private readonly IDashboardService _dashboardService;
         private readonly IMenuRoleService _menuRoleService;
         //private readonly IBiometricService _service;
-        public EmployeeController(IMenuRoleService menuRoleService,IDashboardService dashboardService,IEmployeeResignationService resignationService,IShiftAllocationService shiftAllocationService,  IemployeeService employeeService, ILeaveService leaveService, IWebHostEnvironment env, IEmployeeKpiService kpiService, IManagerKpiReviewService managerReviewService, IEmailService emailService, HRMSContext context)
+        private readonly INotificationService _notificationService;
+        public EmployeeController(IMenuRoleService menuRoleService,IDashboardService dashboardService,IEmployeeResignationService resignationService,IShiftAllocationService shiftAllocationService,  IemployeeService employeeService, ILeaveService leaveService, IWebHostEnvironment env, IEmployeeKpiService kpiService, IManagerKpiReviewService managerReviewService, IEmailService emailService, HRMSContext context, INotificationService notificationService)
         {
             _resignationService = resignationService;
             _employeeService = employeeService;
@@ -39,7 +40,8 @@ namespace HRMS_Backend.Controllers
             _managerReviewService = managerReviewService;
             _dashboardService = dashboardService;
             _menuRoleService = menuRoleService;
-           
+            _notificationService = notificationService;
+
         }
 
         #region Employee Resignation Details
@@ -1284,97 +1286,309 @@ public class UpdateResignationStatusRequest
             if (model.Id <= 0)
                 return BadRequest("Invalid Form Id");
 
+
+            // ============================================================
+            // GET FORM
+            // ============================================================
+
+            var form = await _context.EmployeeForms
+                .FirstOrDefaultAsync(x => x.Id == model.Id);
+
+            if (form == null)
+                return NotFound("Form not found");
+
+
+            // ============================================================
+            // UPLOAD FILES
+            // ============================================================
+
             string root = _env.WebRootPath;
-            string folder = Path.Combine(root, "Uploads", "EmployeeResponses");
+
+            string folder = Path.Combine(
+                root,
+                "Uploads",
+                "EmployeeResponses"
+            );
 
             if (!Directory.Exists(folder))
                 Directory.CreateDirectory(folder);
 
-            if (model.DocumentFiles != null && model.DocumentFiles.Any())
+
+            if (model.DocumentFiles != null &&
+                model.DocumentFiles.Any())
             {
                 foreach (var file in model.DocumentFiles)
                 {
-                    string fileName = $"{Guid.NewGuid()}_{file.FileName}";
-                    string fullPath = Path.Combine(folder, fileName);
+                    string fileName =
+                        $"{Guid.NewGuid()}_{file.FileName}";
 
-                    using var stream = new FileStream(fullPath, FileMode.Create);
+                    string fullPath =
+                        Path.Combine(folder, fileName);
+
+                    using var stream =
+                        new FileStream(fullPath, FileMode.Create);
+
                     await file.CopyToAsync(stream);
 
-                    _context.EmployeeFormEmployeeFiles.Add(new EmployeeFormEmployeeFile
-                    {
-                        FormId = model.Id,
-                        EmployeeCode = model.EmployeeCode,
-                        //EmployeeName = emp?.FirstName ?? "",
-                        FileName = fileName,
-                        FilePath = $"Uploads/EmployeeResponses/{fileName}",
-                        Status = "Pending"
-                    });
+
+                    _context.EmployeeFormEmployeeFiles.Add(
+                        new EmployeeFormEmployeeFile
+                        {
+                            FormId = model.Id,
+                            EmployeeCode = model.EmployeeCode,
+                            FileName = fileName,
+                            FilePath =
+                                $"Uploads/EmployeeResponses/{fileName}",
+                            Status = "Pending"
+                        });
                 }
             }
 
             await _context.SaveChangesAsync();
 
-            return Ok(new { message = "Uploaded successfully" });
+
+            // ============================================================
+            // GET EMPLOYEE
+            // ============================================================
+
+            var employee = await _context.Users
+                .FirstOrDefaultAsync(x =>
+                    x.EmployeeCode == model.EmployeeCode &&
+                    x.CompanyId == form.CompanyId &&
+                    x.RegionId == form.RegionId);
+
+            if (employee == null)
+                return Ok(new
+                {
+                    message = "Uploaded successfully"
+                });
+
+
+            // ============================================================
+            // GET REPORTING HR
+            // ============================================================
+
+            if (employee.ReportingHr.HasValue &&
+                employee.ReportingHr.Value > 0)
+            {
+                var reportingHr = await _context.Users
+                    .FirstOrDefaultAsync(x =>
+                        x.UserId == employee.ReportingHr.Value);
+
+
+                // ========================================================
+                // SEND NOTIFICATION TO REPORTING HR
+                // ========================================================
+
+                if (reportingHr != null)
+                {
+                    await _notificationService.CreateNotificationAsync(
+                        new List<int>
+                        {
+                    reportingHr.UserId
+                        },
+                        "Employee Form Response",
+                        $"{employee.FullName ?? employee.EmployeeCode} has uploaded a response for {form.DocumentName}.",
+                        "EmployeeForm",
+                        model.Id
+                    );
+                }
+            }
+
+
+            return Ok(new
+            {
+                message = "Uploaded successfully"
+            });
         }
         [HttpPost("UpdateStatus")]
         public async Task<IActionResult> UpdateStatus(UpdateStatusDto dto)
         {
-            var form = _context.EmployeeForms
+            var form = await _context.EmployeeForms
                 .Include(x => x.EmployeeFormEmployees)
-                .FirstOrDefault(x => x.Id == dto.Id);
+                .FirstOrDefaultAsync(x => x.Id == dto.Id);
 
             if (form == null)
                 return NotFound();
 
+
+            // ============================================================
+            // UPDATE STATUS
+            // ============================================================
+
             form.Status = dto.Status;
 
-            _context.SaveChanges();
+            await _context.SaveChangesAsync();
 
-            // Send email to selected employees
+
+            // ============================================================
+            // EMPLOYEE EMAIL + NOTIFICATION
+            // ============================================================
+
+            var notifyUserIds = new List<int>();
+
             foreach (var emp in form.EmployeeFormEmployees)
             {
-                var user = _context.Users.FirstOrDefault(u =>
-                    u.EmployeeCode == emp.EmployeeCode &&
-                    u.CompanyId == form.CompanyId &&
-                    u.RegionId == form.RegionId);
+                var user = await _context.Users
+                    .FirstOrDefaultAsync(u =>
+                        u.EmployeeCode == emp.EmployeeCode &&
+                        u.CompanyId == form.CompanyId &&
+                        u.RegionId == form.RegionId);
 
-                if (user != null && !string.IsNullOrEmpty(user.Email))
+                if (user == null)
+                    continue;
+
+
+                // ========================================================
+                // ADD USER FOR NOTIFICATION
+                // ========================================================
+
+                notifyUserIds.Add(user.UserId);
+
+
+                // ========================================================
+                // SEND EMAIL
+                // ========================================================
+
+                if (!string.IsNullOrWhiteSpace(user.Email))
                 {
-                    string subject = $"Your document has been {dto.Status}";
+                    string subject =
+                        $"Your document has been {dto.Status}";
 
                     string body = $@"
                 <html>
                 <body>
+
                     <h3>Employee Document Status Update</h3>
-                    <p>Dear {emp.EmployeeName},</p>
-                    <p>Your submitted document <b>{form.DocumentName}</b> has been <b>{dto.Status}</b>.</p>
-                    <p>Issued Date: {form.IssueDate}</p>
+
+                    <p>
+                        Dear {emp.EmployeeName},
+                    </p>
+
+                    <p>
+                        Your submitted document
+                        <b>{form.DocumentName}</b>
+                        has been
+                        <b>{dto.Status}</b>.
+                    </p>
+
+                    <p>
+                        Issued Date:
+                        {form.IssueDate:dd-MM-yyyy}
+                    </p>
+
                     <br/>
+
                     <p>Regards,</p>
                     <p>HR Team</p>
+
                 </body>
                 </html>";
 
-                    await _emailService.SendEmailAsync(user.Email, subject, body);
+
+                    await _emailService.SendEmailAsync(
+                        user.Email,
+                        subject,
+                        body
+                    );
                 }
             }
 
-            return Ok(new { message = $"Status updated successfully and email sent to employees" });
+
+            // ============================================================
+            // SEND NOTIFICATION TO ALL EMPLOYEES
+            // ============================================================
+
+            if (notifyUserIds.Any())
+            {
+                await _notificationService.CreateNotificationAsync(
+                    notifyUserIds,
+                    "Document Status Updated",
+                    $"Your document '{form.DocumentName}' has been {dto.Status}.",
+                    "EmployeeForm",
+                    form.Id
+                );
+            }
+
+
+            return Ok(new
+            {
+                message = "Status updated successfully, email and notification sent to employees."
+            });
         }
         [HttpPost("UpdateEmployeeFileStatus")]
-        public async Task<IActionResult> UpdateEmployeeFileStatus(UpdateEmployeeFileStatusDto dto)
+        public async Task<IActionResult> UpdateEmployeeFileStatus(
+    UpdateEmployeeFileStatusDto dto)
         {
+            // ============================================================
+            // GET FILE
+            // ============================================================
+
             var file = await _context.EmployeeFormEmployeeFiles
                 .FirstOrDefaultAsync(x => x.Id == dto.FileId);
 
             if (file == null)
-                return NotFound();
+                return NotFound("File not found");
+
+
+            // ============================================================
+            // UPDATE STATUS
+            // ============================================================
 
             file.Status = dto.Status;
 
             await _context.SaveChangesAsync();
 
-            return Ok(new { message = "Status Updated" });
+
+            // ============================================================
+            // GET FORM
+            // ============================================================
+
+            var form = await _context.EmployeeForms
+                .FirstOrDefaultAsync(x => x.Id == file.FormId);
+
+            if (form == null)
+            {
+                return Ok(new
+                {
+                    message = "Status Updated"
+                });
+            }
+
+
+            // ============================================================
+            // GET EMPLOYEE
+            // ============================================================
+
+            var employee = await _context.Users
+                .FirstOrDefaultAsync(x =>
+                    x.EmployeeCode == file.EmployeeCode &&
+                    x.CompanyId == form.CompanyId &&
+                    x.RegionId == form.RegionId);
+
+            if (employee != null)
+            {
+                // ========================================================
+                // SEND NOTIFICATION ONLY
+                // ========================================================
+
+                await _notificationService.CreateNotificationAsync(
+                    new List<int>
+                    {
+                employee.UserId
+                    },
+                    "Employee File Status Updated",
+                    $"Your uploaded file for '{form.DocumentName}' has been {dto.Status}.",
+                    "EmployeeForm",
+                    form.Id
+                );
+            }
+
+
+            return Ok(new
+            {
+                message = "Status Updated and notification sent"
+            });
         }
 
         #endregion

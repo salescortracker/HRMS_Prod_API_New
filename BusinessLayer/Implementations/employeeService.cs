@@ -14,11 +14,13 @@ namespace BusinessLayer.Implementations
         private readonly HRMSContext _context;
         private readonly IUnitOfWork _unitOfWork;
         private readonly INotificationService _notificationService;
-        public employeeService(HRMSContext context, IUnitOfWork unitOfWork, INotificationService notificationService)
+        private readonly IEmailService _emailService;
+        public employeeService(HRMSContext context, IUnitOfWork unitOfWork, INotificationService notificationService, IEmailService emailService)
         {
             _context = context;
             _unitOfWork = unitOfWork;
             _notificationService = notificationService;
+            _emailService = emailService;
         }
         #region employee Certification Details
         /// <summary>
@@ -1337,6 +1339,10 @@ namespace BusinessLayer.Implementations
         /// <returns></returns>
         public async Task<int> addempFormAsync(EmployeeFormDto model, List<EmployeeFormFile> files)
         {
+            // ============================================================
+            // CREATE FORM
+            // ============================================================
+
             var entity = new EmployeeForm
             {
                 RegionId = model.RegionId,
@@ -1354,21 +1360,41 @@ namespace BusinessLayer.Implementations
             _context.EmployeeForms.Add(entity);
             await _context.SaveChangesAsync();
 
-            // ✅ Employees
-            var codes = model.EmployeeCode.Split(',');
-            var names = model.EmployeeName.Split(',');
 
-            for (int i = 0; i < codes.Length; i++)
+            // ============================================================
+            // GET SELECTED EMPLOYEES
+            // ============================================================
+
+            var codes = model.EmployeeCode
+                .Split(',', StringSplitOptions.RemoveEmptyEntries)
+                .Select(x => x.Trim())
+                .ToList();
+
+            var names = model.EmployeeName
+                .Split(',', StringSplitOptions.RemoveEmptyEntries)
+                .Select(x => x.Trim())
+                .ToList();
+
+
+            // ============================================================
+            // SAVE EMPLOYEE-FORM MAPPING
+            // ============================================================
+
+            for (int i = 0; i < codes.Count; i++)
             {
                 _context.EmployeeFormEmployees.Add(new EmployeeFormEmployee
                 {
                     FormId = entity.Id,
                     EmployeeCode = codes[i],
-                    EmployeeName = names[i]
+                    EmployeeName = i < names.Count ? names[i] : ""
                 });
             }
 
-            // ✅ Files
+
+            // ============================================================
+            // SAVE FILES
+            // ============================================================
+
             foreach (var file in files)
             {
                 file.FormId = entity.Id;
@@ -1376,26 +1402,94 @@ namespace BusinessLayer.Implementations
             }
 
             await _context.SaveChangesAsync();
+
+
+            // ============================================================
+            // GET EMPLOYEES
+            // ============================================================
+
             var employees = await _context.Users
-        .Where(u => u.CompanyId == model.CompanyId
-                 && u.RegionId == model.RegionId
-                 && codes.Contains(u.EmployeeCode))
-        .ToListAsync();
+                .Where(u =>
+                    u.CompanyId == model.CompanyId &&
+                    u.RegionId == model.RegionId &&
+                    codes.Contains(u.EmployeeCode))
+                .ToListAsync();
 
-            // Send Notification
-            var notifyUsers = employees
-                .Select(x => x.UserId)
-                .ToList();
 
-            if (notifyUsers.Any())
+            // ============================================================
+            // EMAIL + NOTIFICATION FOR EACH EMPLOYEE
+            // ============================================================
+
+            foreach (var employee in employees)
             {
+                // --------------------------------------------------------
+                // NOTIFICATION
+                // --------------------------------------------------------
+
                 await _notificationService.CreateNotificationAsync(
-                    notifyUsers,
+                    new List<int> { employee.UserId },
                     "New Form",
                     $"A new {model.DocumentName} has been assigned to you.",
                     "EmployeeForm",
                     entity.Id
                 );
+
+
+                // --------------------------------------------------------
+                // EMAIL
+                // --------------------------------------------------------
+
+                if (!string.IsNullOrWhiteSpace(employee.Email))
+                {
+                    string subject = $"New Form Assigned - {model.DocumentName}";
+
+                    string body = $@"
+                <html>
+                <body>
+                    <p>Dear {employee.FullName ?? employee.EmployeeCode},</p>
+
+                    <p>
+                        A new form has been assigned to you in Cortracker HRMS.
+                    </p>
+
+                    <table style='border-collapse: collapse;'>
+                        <tr>
+                            <td style='padding: 6px;'><b>Form</b></td>
+                            <td style='padding: 6px;'>{model.DocumentName}</td>
+                        </tr>
+
+                        <tr>
+                            <td style='padding: 6px;'><b>Issue Date</b></td>
+                            <td style='padding: 6px;'>
+                                {model.IssueDate:dd-MM-yyyy}
+                            </td>
+                        </tr>
+
+                        <tr>
+                            <td style='padding: 6px;'><b>Remarks</b></td>
+                            <td style='padding: 6px;'>
+                                {model.Remarks}
+                            </td>
+                        </tr>
+                    </table>
+
+                    <p>
+                        Please login to Cortracker HRMS to view the assigned form.
+                    </p>
+
+                    <p>
+                        Regards,<br/>
+                        Cortracker HRMS
+                    </p>
+                </body>
+                </html>";
+
+                    await _emailService.SendEmailAsync(
+                        employee.Email,
+                        subject,
+                        body
+                    );
+                }
             }
 
             return entity.Id;
@@ -1407,65 +1501,185 @@ namespace BusinessLayer.Implementations
         /// <returns></returns>
         public async Task<bool> updateempFormAsync(EmployeeFormDto model)
         {
+            // ============================================================
+            // GET EXISTING FORM
+            // ============================================================
+
             var entity = await _context.EmployeeForms
-      .Include(x => x.EmployeeFormEmployees)
-      .Include(x => x.EmployeeFormFiles)
-      .FirstOrDefaultAsync(x => x.Id == model.Id);
+                .Include(x => x.EmployeeFormEmployees)
+                .Include(x => x.EmployeeFormFiles)
+                .FirstOrDefaultAsync(x => x.Id == model.Id);
+
             if (entity == null)
                 return false;
+
+
+            // ============================================================
+            // UPDATE FORM
+            // ============================================================
 
             entity.RegionId = model.RegionId;
             entity.CompanyId = model.CompanyId;
             entity.UserId = model.UserId;
             entity.DocumentTypeId = model.DocumentTypeId;
             entity.DocumentName = model.DocumentName;
-          //  entity.EmployeeCode = model.EmployeeCode;
             entity.IssueDate = model.IssueDate;
-            //entity.FileName = model.FileName;
-            //entity.FilePath = model.FilePath ?? entity.FilePath;
             entity.Remarks = model.Remarks;
             entity.IsConfidential = model.IsConfidential;
             entity.ModifiedBy = model.ModifiedBy;
             entity.ModifiedAt = DateTime.Now;
-            // entity.EmployeeName = model.EmployeeName;
 
-            _context.EmployeeFormEmployees.RemoveRange(entity.EmployeeFormEmployees);
 
-            var codes = model.EmployeeCode.Split(',');
-            var names = model.EmployeeName.Split(',');
+            // ============================================================
+            // EMPLOYEE CODES / NAMES
+            // ============================================================
 
-            for (int i = 0; i < codes.Length; i++)
+            var codes = model.EmployeeCode
+                .Split(',', StringSplitOptions.RemoveEmptyEntries)
+                .Select(x => x.Trim())
+                .ToList();
+
+            var names = model.EmployeeName
+                .Split(',', StringSplitOptions.RemoveEmptyEntries)
+                .Select(x => x.Trim())
+                .ToList();
+
+
+            // ============================================================
+            // REMOVE OLD EMPLOYEES
+            // ============================================================
+
+            _context.EmployeeFormEmployees
+                .RemoveRange(entity.EmployeeFormEmployees);
+
+
+            // ============================================================
+            // ADD NEW EMPLOYEES
+            // ============================================================
+
+            for (int i = 0; i < codes.Count; i++)
             {
                 _context.EmployeeFormEmployees.Add(new EmployeeFormEmployee
                 {
                     FormId = entity.Id,
                     EmployeeCode = codes[i],
-                    EmployeeName = names[i]
+                    EmployeeName = i < names.Count
+                        ? names[i]
+                        : ""
                 });
             }
 
 
+            // ============================================================
+            // SAVE CHANGES
+            // ============================================================
+
             await _context.SaveChangesAsync();
+
+
+            // ============================================================
+            // GET SELECTED EMPLOYEES
+            // ============================================================
+
             var employees = await _context.Users
-            .Where(u => u.CompanyId == model.CompanyId
-                     && u.RegionId == model.RegionId
-                     && codes.Contains(u.EmployeeCode))
-            .ToListAsync();
+                .Where(u =>
+                    u.CompanyId == model.CompanyId &&
+                    u.RegionId == model.RegionId &&
+                    codes.Contains(u.EmployeeCode))
+                .ToListAsync();
 
-            var notifyUsers = employees
-                .Select(x => x.UserId)
-                .ToList();
 
-            if (notifyUsers.Any())
+            // ============================================================
+            // EMAIL + NOTIFICATION FOR EACH EMPLOYEE
+            // ============================================================
+
+            foreach (var employee in employees)
             {
+                // --------------------------------------------------------
+                // NOTIFICATION
+                // --------------------------------------------------------
+
                 await _notificationService.CreateNotificationAsync(
-                    notifyUsers,
+                    new List<int> { employee.UserId },
                     "Form Updated",
                     $"Your {model.DocumentName} has been updated.",
                     "EmployeeForm",
                     entity.Id
                 );
+
+
+                // --------------------------------------------------------
+                // EMAIL
+                // --------------------------------------------------------
+
+                if (!string.IsNullOrWhiteSpace(employee.Email))
+                {
+                    string subject =
+                        $"Form Updated - {model.DocumentName}";
+
+                    string body = $@"
+                <html>
+                <body>
+
+                    <p>Dear {employee.FullName ?? employee.EmployeeCode},</p>
+
+                    <p>
+                        Your assigned form has been updated in
+                        Cortracker HRMS.
+                    </p>
+
+                    <table style='border-collapse: collapse;'>
+
+                        <tr>
+                            <td style='padding: 6px;'>
+                                <b>Form</b>
+                            </td>
+                            <td style='padding: 6px;'>
+                                {model.DocumentName}
+                            </td>
+                        </tr>
+
+                        <tr>
+                            <td style='padding: 6px;'>
+                                <b>Issue Date</b>
+                            </td>
+                            <td style='padding: 6px;'>
+                                {model.IssueDate:dd-MM-yyyy}
+                            </td>
+                        </tr>
+
+                        <tr>
+                            <td style='padding: 6px;'>
+                                <b>Remarks</b>
+                            </td>
+                            <td style='padding: 6px;'>
+                                {model.Remarks}
+                            </td>
+                        </tr>
+
+                    </table>
+
+                    <p>
+                        Please login to Cortracker HRMS to view
+                        the updated form.
+                    </p>
+
+                    <p>
+                        Regards,<br/>
+                        Cortracker HRMS
+                    </p>
+
+                </body>
+                </html>";
+
+                    await _emailService.SendEmailAsync(
+                        employee.Email,
+                        subject,
+                        body
+                    );
+                }
             }
+
             return true;
         }
         /// <summary>
