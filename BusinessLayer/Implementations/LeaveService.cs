@@ -516,15 +516,68 @@ namespace BusinessLayer.Implementations
             if (dto.ReportingManagerId.HasValue)
             {
                 notifyUsers.Add(dto.ReportingManagerId.Value);
+
+                var reportingManager = await _context.Users
+                    .FirstOrDefaultAsync(x => x.UserId == dto.ReportingManagerId.Value);
+
+                if (reportingManager != null &&
+                    !string.IsNullOrWhiteSpace(reportingManager.Email))
+                {
+                    await _emailService.SendEmailAsync(
+                        reportingManager.Email,
+                        "Leave Request - Approval Required",
+                        $@"
+                <p>Dear Reporting Manager,</p>
+
+                <p>
+                    <strong>{user.FullName}</strong> has submitted a leave request.
+                </p>
+
+                <p>
+                    <strong>Leave From:</strong> {dto.StartDate:dd/MM/yyyy}<br/>
+                    <strong>Leave To:</strong> {dto.EndDate:dd/MM/yyyy}<br/>
+                    <strong>Total Days:</strong> {dto.TotalDays}<br/>
+                    <strong>Reason:</strong> {dto.Reason}
+                </p>
+
+                <p>Please review and take the necessary action.</p>
+            "
+                    );
+                }
             }
 
             // Reporting HR ni DB nundi fetch cheyyi
-            var employee = await _context.EmployeePersonalDetails
-                .FirstOrDefaultAsync(x => x.UserId == dto.UserId);
-
-            if (user.ReportingHr != null)
+            if (user.ReportingHr.HasValue)
             {
                 notifyUsers.Add(user.ReportingHr.Value);
+
+                var reportingHr = await _context.Users
+                    .FirstOrDefaultAsync(x => x.UserId == user.ReportingHr.Value);
+
+                if (reportingHr != null &&
+                    !string.IsNullOrWhiteSpace(reportingHr.Email))
+                {
+                    await _emailService.SendEmailAsync(
+                        reportingHr.Email,
+                        "Leave Request - HR Notification",
+                        $@"
+                <p>Dear HR,</p>
+
+                <p>
+                    <strong>{user.FullName}</strong> has submitted a leave request.
+                </p>
+
+                <p>
+                    <strong>Leave From:</strong> {dto.StartDate:dd/MM/yyyy}<br/>
+                    <strong>Leave To:</strong> {dto.EndDate:dd/MM/yyyy}<br/>
+                    <strong>Total Days:</strong> {dto.TotalDays}<br/>
+                    <strong>Reason:</strong> {dto.Reason}
+                </p>
+
+                <p>This is an HR notification for the submitted leave request.</p>
+            "
+                    );
+                }
             }
 
             await _notificationService.CreateNotificationAsync(
