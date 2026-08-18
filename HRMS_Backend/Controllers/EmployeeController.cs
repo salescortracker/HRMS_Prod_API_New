@@ -4,6 +4,7 @@ using BusinessLayer.Implementations;
 using BusinessLayer.Interfaces;
 using DataAccessLayer.DBContext;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.StaticFiles;
 using Microsoft.EntityFrameworkCore;
 using System.Threading.Tasks;
 using static BusinessLayer.Implementations.LeaveService;
@@ -1648,34 +1649,77 @@ public class UpdateResignationStatusRequest
             if (!ModelState.IsValid)
                 return BadRequest(ModelState);
 
-            string root = _env.WebRootPath ?? Path.Combine(Directory.GetCurrentDirectory(), "wwwroot");
-            string folder = Path.Combine(root, "Uploads", "EmployeeLetters");
+            // =====================================================
+            // SAVE FILES INSIDE wwwroot/Uploads/EmployeeLetters
+            // =====================================================
 
+            string webRootPath = Path.Combine(
+                Directory.GetCurrentDirectory(),
+                "wwwroot"
+            );
+
+            string folder = Path.Combine(
+                webRootPath,
+                "Uploads",
+                "EmployeeLetters"
+            );
+
+            // Create folder if it doesn't exist
             if (!Directory.Exists(folder))
+            {
                 Directory.CreateDirectory(folder);
+            }
+
             List<EmployeeLetterFile> fileEntities = new();
 
             if (model.DocumentFiles != null && model.DocumentFiles.Any())
             {
                 foreach (var file in model.DocumentFiles)
                 {
-                    string fileName = $"{Guid.NewGuid()}_{file.FileName}";
-                    string fullPath = Path.Combine(folder, fileName);
+                    if (file == null || file.Length == 0)
+                        continue;
 
-                    using var stream = new FileStream(fullPath, FileMode.Create);
-                    await file.CopyToAsync(stream);
+                    // Generate unique file name
+                    string fileName =
+                        $"{Guid.NewGuid()}_{Path.GetFileName(file.FileName)}";
 
+                    string fullPath = Path.Combine(
+                        folder,
+                        fileName
+                    );
+
+                    // Save physical file
+                    using (var stream = new FileStream(
+                        fullPath,
+                        FileMode.Create,
+                        FileAccess.Write))
+                    {
+                        await file.CopyToAsync(stream);
+                    }
+
+                    // Save relative path in database
                     fileEntities.Add(new EmployeeLetterFile
                     {
                         FileName = fileName,
-                        FilePath = $"Uploads/EmployeeLetters/{fileName}"
+
+                        FilePath =
+                            $"Uploads/EmployeeLetters/{fileName}"
                     });
                 }
             }
+
             model.CreatedBy = model.UserId;
 
-            var id = await _employeeService.addempLetterAsync(model, fileEntities);
-            return Ok(new { message = "Saved successfully", id });
+            var id = await _employeeService.addempLetterAsync(
+                model,
+                fileEntities
+            );
+
+            return Ok(new
+            {
+                message = "Saved successfully",
+                id = id
+            });
         }
         /// <summary>
         /// 
@@ -2108,29 +2152,101 @@ public class UpdateResignationStatusRequest
             {
                 if (!ModelState.IsValid)
                     return BadRequest(ModelState);
-                string root = _env.WebRootPath ?? Path.Combine(Directory.GetCurrentDirectory(), "wwwroot");
 
-                string path = Path.Combine(root, "Uploads", "EmployeeProfileDetails");
+                // ============================================
+                // WWWROOT
+                // ============================================
 
-                if (!Directory.Exists(path))
-                    Directory.CreateDirectory(path);
+                string root = _env.WebRootPath;
 
-                if (dto.profilePicture != null && dto.profilePicture.Length > 0)
+                if (string.IsNullOrEmpty(root))
                 {
-                    string fileName = $"{Guid.NewGuid()}_{dto.profilePicture.FileName}";
-                    string fullPath = Path.Combine(path, fileName);
-
-                    using var stream = new FileStream(fullPath, FileMode.Create);
-                    await dto.profilePicture.CopyToAsync(stream);
-
-                    dto.profilePicturePath = $"Uploads/EmployeeProfileDetails/{fileName}";
+                    root = Path.Combine(
+                        Directory.GetCurrentDirectory(),
+                        "wwwroot"
+                    );
                 }
-                var result = await _employeeService.AddPersonalEmailAsync(dto);
+
+                // ============================================
+                // PROFILE PICTURE FOLDER
+                // ============================================
+
+                string uploadFolder = Path.Combine(
+                    root,
+                    "Uploads",
+                    "EmployeeProfileDetails"
+                );
+
+                if (!Directory.Exists(uploadFolder))
+                {
+                    Directory.CreateDirectory(uploadFolder);
+                }
+
+                // ============================================
+                // SAVE PROFILE PICTURE
+                // ============================================
+
+                if (dto.profilePicture != null &&
+                    dto.profilePicture.Length > 0)
+                {
+                    string originalFileName =
+                        Path.GetFileName(dto.profilePicture.FileName);
+
+                    string fileName =
+                        $"{Guid.NewGuid()}_{originalFileName}";
+
+                    string fullPath =
+                        Path.Combine(uploadFolder, fileName);
+
+                    await using (var stream =
+                        new FileStream(
+                            fullPath,
+                            FileMode.Create,
+                            FileAccess.Write,
+                            FileShare.None))
+                    {
+                        await dto.profilePicture.CopyToAsync(stream);
+                    }
+
+                    // ========================================
+                    // VERIFY FILE
+                    // ========================================
+
+                    if (!System.IO.File.Exists(fullPath))
+                    {
+                        return StatusCode(
+                            500,
+                            "Profile picture could not be saved."
+                        );
+                    }
+
+                    // ========================================
+                    // SAVE RELATIVE PATH IN DATABASE
+                    // ========================================
+
+                    dto.profilePicturePath =
+                        $"Uploads/EmployeeProfileDetails/{fileName}";
+                }
+
+                // ============================================
+                // SAVE PERSONAL DETAILS
+                // ============================================
+
+                var result =
+                    await _employeeService.AddPersonalEmailAsync(dto);
+
                 return Ok(result);
             }
             catch (Exception ex)
             {
-                throw ex;
+                return StatusCode(
+                    500,
+                    new
+                    {
+                        message = "Error while saving employee personal details.",
+                        error = ex.Message
+                    }
+                );
             }
         }
 
@@ -2138,41 +2254,159 @@ public class UpdateResignationStatusRequest
         [HttpPost("UpdateempPersonalAsync")]
         public async Task<IActionResult> UpdateempPersonalAsync([FromForm] PersonalDetailsDto dto)
         {
-            if (!ModelState.IsValid)
-                return BadRequest(ModelState);
-            if (string.IsNullOrEmpty(Request.Form["MarriageDate"]))
-            {
-                dto.MarriageDate = null;
-            }
-
-
             try
             {
                 if (!ModelState.IsValid)
                     return BadRequest(ModelState);
-                string root = _env.WebRootPath ?? Path.Combine(Directory.GetCurrentDirectory(), "wwwroot");
 
-                string path = Path.Combine(root, "Uploads", "EmployeeProfileDetails");
+                // ============================================
+                // MARRIAGE DATE
+                // ============================================
 
-                if (!Directory.Exists(path))
-                    Directory.CreateDirectory(path);
-
-                if (dto.profilePicture != null && dto.profilePicture.Length > 0)
+                if (string.IsNullOrEmpty(Request.Form["MarriageDate"]))
                 {
-                    string fileName = $"{Guid.NewGuid()}_{dto.profilePicture.FileName}";
-                    string fullPath = Path.Combine(path, fileName);
-
-                    using var stream = new FileStream(fullPath, FileMode.Create);
-                    await dto.profilePicture.CopyToAsync(stream);
-
-                    dto.profilePicturePath = $"Uploads/EmployeeProfileDetails/{fileName}";
+                    dto.MarriageDate = null;
                 }
-                var result = await _employeeService.UpdateempPersonalAsync(dto);
+
+                // ============================================
+                // WWWROOT
+                // ============================================
+
+                string root = _env.WebRootPath;
+
+                if (string.IsNullOrEmpty(root))
+                {
+                    root = Path.Combine(
+                        Directory.GetCurrentDirectory(),
+                        "wwwroot"
+                    );
+                }
+
+                // ============================================
+                // PROFILE PICTURE FOLDER
+                // ============================================
+
+                string uploadFolder = Path.Combine(
+                    root,
+                    "Uploads",
+                    "EmployeeProfileDetails"
+                );
+
+                if (!Directory.Exists(uploadFolder))
+                {
+                    Directory.CreateDirectory(uploadFolder);
+                }
+
+                // ============================================
+                // KEEP OLD PROFILE PICTURE PATH
+                // ============================================
+
+                string? oldProfilePicturePath =
+                    dto.profilePicturePath;
+
+                // ============================================
+                // NEW PROFILE PICTURE
+                // ============================================
+
+                if (dto.profilePicture != null &&
+                    dto.profilePicture.Length > 0)
+                {
+                    string originalFileName =
+                        Path.GetFileName(dto.profilePicture.FileName);
+
+                    string newFileName =
+                        $"{Guid.NewGuid()}_{originalFileName}";
+
+                    string newFullPath =
+                        Path.Combine(
+                            uploadFolder,
+                            newFileName
+                        );
+
+                    // ========================================
+                    // SAVE NEW IMAGE
+                    // ========================================
+
+                    await using (var stream =
+                        new FileStream(
+                            newFullPath,
+                            FileMode.Create,
+                            FileAccess.Write,
+                            FileShare.None))
+                    {
+                        await dto.profilePicture.CopyToAsync(stream);
+                    }
+
+                    // ========================================
+                    // VERIFY NEW IMAGE
+                    // ========================================
+
+                    if (!System.IO.File.Exists(newFullPath))
+                    {
+                        return StatusCode(
+                            500,
+                            "Profile picture could not be saved."
+                        );
+                    }
+
+                    // ========================================
+                    // NEW DATABASE PATH
+                    // ========================================
+
+                    dto.profilePicturePath =
+                        $"Uploads/EmployeeProfileDetails/{newFileName}";
+
+                    // ========================================
+                    // DELETE OLD IMAGE
+                    // ========================================
+
+                    if (!string.IsNullOrWhiteSpace(oldProfilePicturePath))
+                    {
+                        string oldRelativePath =
+                            oldProfilePicturePath
+                                .Replace("/", Path.DirectorySeparatorChar.ToString())
+                                .Replace("\\", Path.DirectorySeparatorChar.ToString());
+
+                        string oldFullPath =
+                            Path.Combine(
+                                root,
+                                oldRelativePath
+                            );
+
+                        if (System.IO.File.Exists(oldFullPath))
+                        {
+                            try
+                            {
+                                System.IO.File.Delete(oldFullPath);
+                            }
+                            catch
+                            {
+                                // Don't fail update just because
+                                // old image could not be deleted.
+                            }
+                        }
+                    }
+                }
+
+                // ============================================
+                // UPDATE PERSONAL DETAILS
+                // ============================================
+
+                var result =
+                    await _employeeService.UpdateempPersonalAsync(dto);
+
                 return Ok(result);
             }
             catch (Exception ex)
             {
-                return NotFound(ex.Message);
+                return StatusCode(
+                    500,
+                    new
+                    {
+                        message = "Error while updating employee personal details.",
+                        error = ex.Message
+                    }
+                );
             }
         }
 
