@@ -15,5 +15,6 @@ namespace BusinessLayer.DTOs
         public bool IsNew => RegionID == 0;
         public int? userId { get; set; }
         public bool? isActive { get; set; }
+        public string? TimeZoneId { get; set; }
     }
 }
