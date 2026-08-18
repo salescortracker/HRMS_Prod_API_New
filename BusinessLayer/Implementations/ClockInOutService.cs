@@ -82,56 +82,42 @@ GetAttendanceByDateRangeAsync(
                 .ToList();
         }
 
-        //public async Task<ClockInOutDto> AddAsync(ClockInOutCreateDto dto, int userId)
-        //{
-        //    try
-        //    {
-        //        var entity = new ClockInOut
-        //        {
-        //            RegionId = dto.RegionId,
-        //            CompanyId = dto.CompanyId,
-        //            EmployeeCode = dto.EmployeeCode,
-        //            EmployeeName = dto.EmployeeName,
-        //            Department = dto.Department,
-        //            ClockInTime = string.IsNullOrWhiteSpace(dto.clockInTime)    ? null
-        //                          : TimeOnly.ParseExact(dto.clockInTime, "HH:mm", CultureInfo.InvariantCulture),
-        //            ClockOutTime = string.IsNullOrWhiteSpace(dto.clockOutTime)
-        //                            ? null
-        //                            : TimeOnly.ParseExact(dto.clockOutTime, "HH:mm", CultureInfo.InvariantCulture),
-        //            ActionTime =  TimeOnly.ParseExact(dto.ActionTime, "HH:mm", CultureInfo.InvariantCulture),
-        //            AttendanceDate = DateOnly.FromDateTime(dto.AttendanceDate),
-        //            ActionType = dto.ActionType,                 // ClockIn / ClockOut
-        //                                                         //ActionTime = DateTime.Now.TimeOfDay,          // ✅ FIXED
-        //            Status = dto.ActionType == "ClockIn"
-        //                        ? "Present"
-        //                        : "Completed",
-        //            CreatedBy = userId,
-        //            CreatedAt = DateTime.Now
-        //        };
-
-        //        await _unitOfWork.Repository<ClockInOut>().AddAsync(entity);
-        //        await _unitOfWork.CompleteAsync();
-
-        //        return MapToDto(entity);
-        //    }
-        //    catch (Exception ex)
-        //    {
-        //        throw new Exception("Error adding ClockInOut record: " + ex.Message);
-        //    }
-        //}
-
         public async Task<ClockInOutDto> AddAsync(ClockInOutCreateDto dto, int userId)
 
         {
             try
             {
-                var result = _context.ClockInOuts.Where(x => x.CompanyId == dto.CompanyId && x.RegionId == dto.RegionId
-                && x.EmployeeCode == dto.EmployeeCode).FirstOrDefault();
+                var region = await _context.Regions
+                .FirstOrDefaultAsync(x =>
+                    x.RegionId == dto.RegionId &&
+                    x.CompanyId == dto.CompanyId);
 
-                if(dto.ActionType== "ClockOut")
+                if (region == null)
                 {
-                    dto.AttendanceDate = Convert.ToDateTime(dto.AttendanceDate);
+                    throw new Exception("Region not found.");
                 }
+
+                if (string.IsNullOrWhiteSpace(region.TimeZoneId))
+                {
+                    throw new Exception("Time Zone is not configured for this region.");
+                }
+                TimeZoneInfo regionTimeZone;
+
+                try
+                {
+                    regionTimeZone = TimeZoneInfo.FindSystemTimeZoneById(region.TimeZoneId);
+                }
+                catch
+                {
+                    throw new Exception(
+                        $"Invalid time zone configured for region: {region.TimeZoneId}"
+                    );
+                }
+
+                DateTime utcNow = DateTime.UtcNow;
+
+                DateTime regionNow =
+                    TimeZoneInfo.ConvertTimeFromUtc(utcNow, regionTimeZone);
 
                 var entity = new ClockInOut
                 {
@@ -179,7 +165,7 @@ GetAttendanceByDateRangeAsync(
 
                     CreatedBy = userId,
 
-                    CreatedAt = DateTime.Now
+                    CreatedAt = DateTime.UtcNow
                 };
 
                 // ✅ SAVE RECORD
@@ -286,9 +272,26 @@ GetAttendanceByDateRangeAsync(
                     {
                         lastIn = log.ActionTime;
                     }
-                    else if (log.ActionType == "ClockOut" && lastIn != null)
+                    else if (log.ActionType == "ClockOut" && lastIn.HasValue)
                     {
-                        totalWorked += (log.ActionTime - lastIn.Value);
+                        TimeSpan workedDuration;
+
+                        if (log.ActionTime >= lastIn.Value)
+                        {
+                            workedDuration =
+                                log.ActionTime.ToTimeSpan() -
+                                lastIn.Value.ToTimeSpan();
+                        }
+                        else
+                        {
+                            workedDuration =
+                                (TimeSpan.FromHours(24) -
+                                 lastIn.Value.ToTimeSpan()) +
+                                log.ActionTime.ToTimeSpan();
+                        }
+
+                        totalWorked += workedDuration;
+
                         lastIn = null;
                     }
                 }
@@ -340,121 +343,121 @@ GetAttendanceByDateRangeAsync(
                             // ✅ EMAIL BODY
                             string body = $@"
 
-<div style='font-family:Segoe UI,Arial,sans-serif;
-background-color:#f4f6f9;padding:20px;'>
+                                <div style='font-family:Segoe UI,Arial,sans-serif;
+                                background-color:#f4f6f9;padding:20px;'>
 
-<div style='max-width:600px;
-margin:auto;
-background:#ffffff;
-border-radius:10px;
-overflow:hidden;
-box-shadow:0 4px 12px rgba(0,0,0,0.15);'>
+                                <div style='max-width:600px;
+                                margin:auto;
+                                background:#ffffff;
+                                border-radius:10px;
+                                overflow:hidden;
+                                box-shadow:0 4px 12px rgba(0,0,0,0.15);'>
 
-<div style='background:#dc3545;
-color:#ffffff;
-padding:18px;
-text-align:center;
-font-size:22px;
-font-weight:bold;'>
+                                <div style='background:#dc3545;
+                                color:#ffffff;
+                                padding:18px;
+                                text-align:center;
+                                font-size:22px;
+                                font-weight:bold;'>
 
-Early Clock Out Alert
+                                Early Clock Out Alert
 
-</div>
+                                </div>
 
-<div style='padding:25px;
-color:#333;
-font-size:15px;'>
+                                <div style='padding:25px;
+                                color:#333;
+                                font-size:15px;'>
 
-<p>
-Dear <b>{employee.FullName}</b>,
-</p>
+                                <p>
+                                Dear <b>{employee.FullName}</b>,
+                                </p>
 
-<p>
-You have clocked out before completing
-<b>8 working hours</b>.
-</p>
+                                <p>
+                                You have clocked out before completing
+                                <b>8 working hours</b>.
+                                </p>
 
-<table style='width:100%;
-border-collapse:collapse;
-margin-top:15px;
-font-size:14px;'>
+                                <table style='width:100%;
+                                border-collapse:collapse;
+                                margin-top:15px;
+                                font-size:14px;'>
 
-<tr>
-<td style='padding:10px;
-border:1px solid #ddd;
-background:#f8f9fa;
-font-weight:bold;'>
-Total Worked Hours
-</td>
+                                <tr>
+                                <td style='padding:10px;
+                                border:1px solid #ddd;
+                                background:#f8f9fa;
+                                font-weight:bold;'>
+                                Total Worked Hours
+                                </td>
 
-<td style='padding:10px;
-border:1px solid #ddd;'>
-{worked}
-</td>
-</tr>
+                                <td style='padding:10px;
+                                border:1px solid #ddd;'>
+                                {worked}
+                                </td>
+                                </tr>
 
-<tr>
-<td style='padding:10px;
-border:1px solid #ddd;
-background:#f8f9fa;
-font-weight:bold;'>
-Required Hours
-</td>
+                                <tr>
+                                <td style='padding:10px;
+                                border:1px solid #ddd;
+                                background:#f8f9fa;
+                                font-weight:bold;'>
+                                Required Hours
+                                </td>
 
-<td style='padding:10px;
-border:1px solid #ddd;'>
-08:00:00
-</td>
-</tr>
+                                <td style='padding:10px;
+                                border:1px solid #ddd;'>
+                                08:00:00
+                                </td>
+                                </tr>
 
-<tr>
-<td style='padding:10px;
-border:1px solid #ddd;
-background:#f8f9fa;
-font-weight:bold;'>
-Remaining Hours
-</td>
+                                <tr>
+                                <td style='padding:10px;
+                                border:1px solid #ddd;
+                                background:#f8f9fa;
+                                font-weight:bold;'>
+                                Remaining Hours
+                                </td>
 
-<td style='padding:10px;
-border:1px solid #ddd;
-color:#dc3545;
-font-weight:bold;'>
-{remaining.Hours.ToString("00")}:{remaining.Minutes.ToString("00")}:{remaining.Seconds.ToString("00")} Hours
-</td>
-</tr>
+                                <td style='padding:10px;
+                                border:1px solid #ddd;
+                                color:#dc3545;
+                                font-weight:bold;'>
+                                {remaining.Hours.ToString("00")}:{remaining.Minutes.ToString("00")}:{remaining.Seconds.ToString("00")} Hours
+                                </td>
+                                </tr>
 
-<tr>
-<td style='padding:10px;
-border:1px solid #ddd;
-background:#f8f9fa;
-font-weight:bold;'>
-Attendance Date
-</td>
+                                <tr>
+                                <td style='padding:10px;
+                                border:1px solid #ddd;
+                                background:#f8f9fa;
+                                font-weight:bold;'>
+                                Attendance Date
+                                </td>
 
-<td style='padding:10px;
-border:1px solid #ddd;'>
-{DateTime.Now:dd-MM-yyyy}
-</td>
-</tr>
+                                <td style='padding:10px;
+                                border:1px solid #ddd;'>
+                                {DateTime.Now:dd-MM-yyyy}
+                                </td>
+                                </tr>
 
-</table>
+                                </table>
 
-</div>
+                                </div>
 
-<div style='background:#f1f1f1;
-padding:12px;
-text-align:center;
-font-size:12px;
-color:#777;'>
+                                <div style='background:#f1f1f1;
+                                padding:12px;
+                                text-align:center;
+                                font-size:12px;
+                                color:#777;'>
 
-© {DateTime.Now.Year}
-Cortracker360 HRMS System
+                                © {DateTime.Now.Year}
+                                Cortracker360 HRMS System
 
-</div>
+                                </div>
 
-</div>
+                                </div>
 
-</div>";
+                                </div>";
 
                             try
                             {

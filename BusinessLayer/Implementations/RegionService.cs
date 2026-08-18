@@ -101,6 +101,7 @@ namespace BusinessLayer.Implementations
                 existing.ModifiedAt = DateTime.Now;
                 existing.UserId = updateData.UserId;
                 existing.IsActive = updateData.IsActive;
+                existing.TimeZoneId = updateData.TimeZoneId;
                 _unitOfWork.Repository<Region>().Update(existing);
                 await _unitOfWork.CompleteAsync();
 
@@ -217,7 +218,8 @@ namespace BusinessLayer.Implementations
                 RegionName = region.RegionName,
                 Country = region.Country,
                 userId=region.UserId,
-                isActive=region.IsActive
+                isActive=region.IsActive,
+                TimeZoneId=region.TimeZoneId
                
             };
         }
