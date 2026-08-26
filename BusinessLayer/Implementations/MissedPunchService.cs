@@ -20,71 +20,228 @@ namespace BusinessLayer.Implementations
 
         // 🔹 CREATE
         public async Task<MissedPunchRequest> CreateMissedPunchRequest(
-            CreateMissedPunchRequestDto dto)
+    CreateMissedPunchRequestDto dto)
         {
             try
             {
+                // ============================================================
+                // 1. CHECK DUPLICATE PENDING REQUEST
+                // ============================================================
+
                 var exists = await _context.MissedPunchRequests.AnyAsync(x =>
-    x.EmployeeId == dto.EmployeeID &&
-    x.MissedDate == dto.MissedDate &&
-    x.MissedType == dto.MissedType &&
-    x.Status == "Pending");
+                    x.EmployeeId == dto.EmployeeID &&
+                    x.MissedDate == dto.MissedDate &&
+                    x.MissedType == dto.MissedType &&
+                    x.Status == "Pending");
 
                 if (exists)
                 {
-                    throw new Exception("A pending request already exists for this date.");
+                    throw new Exception(
+                        "A pending request already exists for this date.");
                 }
+
+
+                // ============================================================
+                // 2. GET EMPLOYEE'S ACTIVE SHIFT ALLOCATION
+                //    BASED ON UserId + Company + Region
+                // ============================================================
+
+                var today = DateOnly.FromDateTime(DateTime.Now);
+
+                var shiftAllocation = await _context.ShiftAllocations
+                    .Where(x =>
+                        x.UserId == dto.UserId &&
+                        x.CompanyId == dto.CompanyID &&
+                        x.RegionId == dto.RegionID &&
+                        x.IsActive &&
+                        x.StartDate <= today &&
+                        (!x.EndDate.HasValue || x.EndDate.Value >= today)
+                    )
+                    .OrderByDescending(x => x.StartDate)
+                    .FirstOrDefaultAsync();
+
+                if (shiftAllocation == null)
+                {
+                    throw new Exception(
+                        "No active shift is assigned to this employee.");
+                }
+
+
+                // ============================================================
+                // 3. CHECK SHIFT ID
+                // ============================================================
+
+                if (!shiftAllocation.ShiftId.HasValue)
+                {
+                    throw new Exception(
+                        "Shift is not configured for this employee.");
+                }
+
+
+                // ============================================================
+                // 4. GET SHIFT MASTER
+                // ============================================================
+
+                var shift = await _context.ShiftMasters
+                    .Where(x =>
+                        x.ShiftId == shiftAllocation.ShiftId.Value &&
+                        x.CompanyId == dto.CompanyID &&
+                        x.RegionId == dto.RegionID &&
+                        x.IsActive)
+                    .FirstOrDefaultAsync();
+
+                if (shift == null)
+                {
+                    throw new Exception("Shift details were not found for this employee.");
+                }
+
+                // ============================================================
+                // GET CURRENT TIME
+                // ============================================================
+
+                var currentTime = TimeOnly.FromDateTime(DateTime.Now);
+
+                var shiftStartTime = shift.ShiftStartTime;
+                var shiftEndTime = shift.ShiftEndTime;
+
+
+                // ============================================================
+                // NORMALIZE MISSED TYPE
+                // ============================================================
+
+                var missedType = dto.MissedType?
+                    .Trim()
+                    .ToLower();
+
+
+                // ============================================================
+                // MISSED CLOCK IN
+                // ============================================================
+
+                if (missedType == "missed clock in" ||
+                    missedType == "clock in")
+                {
+                    if (currentTime < shiftStartTime)
+                    {
+                        throw new Exception(
+                            $"Cannot submit Missed Clock In before shift start time. " +
+                            $"Shift starts at {shiftStartTime:hh\\:mm tt}. " +
+                            $"Current time is {currentTime:hh\\:mm tt}.");
+                    }
+                }
+
+
+                // ============================================================
+                // MISSED CLOCK OUT
+                // ============================================================
+
+                else if (missedType == "missed clock out" ||
+                         missedType == "clock out")
+                {
+                    if (currentTime < shiftEndTime)
+                    {
+                        throw new Exception(
+                            $"Cannot submit Missed Clock Out before shift end time. " +
+                            $"Shift ends at {shiftEndTime:hh\\:mm tt}. " +
+                            $"Current time is {currentTime:hh\\:mm tt}.");
+                    }
+                }
+
+
+                // ============================================================
+                // INVALID TYPE
+                // ============================================================
+
+                else
+                {
+                    throw new Exception(
+                        $"Invalid missed punch type: {dto.MissedType}");
+                }
+
+
+                // ============================================================
+                // 8. CREATE MISSED PUNCH REQUEST
+                // ============================================================
+
                 var entity = new MissedPunchRequest
                 {
                     EmployeeId = dto.EmployeeID,
                     MissedDate = dto.MissedDate,
                     MissedType = dto.MissedType,
-                    ManagerId=dto.reportingTo,
+
+                    ManagerId = dto.reportingTo,
+
                     CorrectClockIn = dto.CorrectClockIn,
                     CorrectClockOut = dto.CorrectClockOut,
+
                     Reason = dto.Reason,
+
                     Status = "Pending",
+
                     CompanyId = dto.CompanyID,
                     RegionId = dto.RegionID,
+
                     CreatedAt = DateTime.UtcNow,
                     CreatedBy = dto.UserId,
+
                     UserId = dto.UserId,
-                    HrEmail = dto.HrEmail,
+
+                    HrEmail = dto.HrEmail
                 };
 
                 _context.MissedPunchRequests.Add(entity);
+
                 await _context.SaveChangesAsync();
-                // ✅ GET MANAGER DETAILS
+
+
+                // ============================================================
+                // 9. GET MANAGER DETAILS
+                // ============================================================
+
                 var manager = await _context.Users
                     .Where(x => x.UserId == dto.reportingTo)
-                    .Select(x => new { x.Email, x.FullName })
+                    .Select(x => new
+                    {
+                        x.Email,
+                        x.FullName
+                    })
                     .FirstOrDefaultAsync();
 
-                // ✅ GET EMPLOYEE DETAILS
-                //var employee = await _context.Users
-                //    .Where(x => x.UserId == dto.UserId)
-                //    .Select(x => new { x.FullName, x.Email })
-                //    .FirstOrDefaultAsync();
+
+                // ============================================================
+                // 10. GET EMPLOYEE DETAILS
+                // ============================================================
+
                 var employee = await _context.Users
-    .Where(x => x.UserId == dto.UserId)
-    .Select(x => new
-    {
-        x.FullName,
-        x.Email,
-        x.ReportingHr
-    })
-    .FirstOrDefaultAsync();
+                    .Where(x => x.UserId == dto.UserId)
+                    .Select(x => new
+                    {
+                        x.FullName,
+                        x.Email,
+                        x.ReportingHr
+                    })
+                    .FirstOrDefaultAsync();
 
                 string? reportingHrEmail = null;
+
+
+                // ============================================================
+                // 11. GET REPORTING HR EMAIL
+                // ============================================================
 
                 if (employee?.ReportingHr != null)
                 {
                     var reportingHrUser = await _context.Users
-                        .FirstOrDefaultAsync(x => x.UserId == employee.ReportingHr);
+                        .FirstOrDefaultAsync(x =>
+                            x.UserId == employee.ReportingHr);
 
                     reportingHrEmail = reportingHrUser?.Email;
                 }
-                // ================= NOTIFICATION SECTION =================
+
+
+                // ============================================================
+                // 12. NOTIFICATION
+                // ============================================================
 
                 var notificationUsers = new List<int>();
 
@@ -98,54 +255,103 @@ namespace BusinessLayer.Implementations
                     notificationUsers.Add(employee.ReportingHr.Value);
                 }
 
-                notificationUsers = notificationUsers.Distinct().ToList();
+                notificationUsers = notificationUsers
+                    .Distinct()
+                    .ToList();
 
                 if (notificationUsers.Any())
                 {
                     await _notificationService.CreateNotificationAsync(
                         notificationUsers,
+
                         "Missed Punch Request",
-                        $"{employee.FullName} has submitted a missed punch request for {dto.MissedDate:dd-MMM-yyyy}.",
+
+                        $"{employee?.FullName} has submitted a missed punch request " +
+                        $"for {dto.MissedDate:dd-MMM-yyyy}.",
+
                         "Attendance",
-                        entity.MissedPunchRequestId   // Replace with your actual PK if needed
+
+                        entity.MissedPunchRequestId
                     );
                 }
-                // ✅ SEND EMAIL TO MANAGER
-                if (manager != null && !string.IsNullOrEmpty(manager.Email))
+
+
+                // ============================================================
+                // 13. SEND EMAIL TO MANAGER
+                // ============================================================
+
+                if (manager != null &&
+                    !string.IsNullOrEmpty(manager.Email))
                 {
                     var body = $@"
-    <div style='font-family:Arial'>
-        <h3>Missed Punch Request Notification</h3>
+                        <div style='font-family:Arial'>
 
-        <p>Dear {manager.FullName},</p>
+                            <h3>Missed Punch Request Notification</h3>
 
-        <p>A new missed punch request has been submitted.</p>
+                            <p>Dear {manager.FullName},</p>
 
-        <table border='1' cellpadding='6' cellspacing='0'>
-            <tr><td><b>Employee</b></td><td>{employee?.FullName}</td></tr>
-            <tr><td><b>Date</b></td><td>{dto.MissedDate:dd-MM-yyyy}</td></tr>
-            <tr><td><b>Type</b></td><td>{dto.MissedType}</td></tr>
-            <tr><td><b>Reason</b></td><td>{dto.Reason}</td></tr>
-        </table>
+                            <p>A new missed punch request has been submitted.</p>
 
-        <p>Please review and take action.</p>
+                            <table border='1'
+                                   cellpadding='6'
+                                   cellspacing='0'>
 
-        <br/>
-        <p>Regards,<br/><b>HRMS Team</b></p>
-    </div>
-    ";
+                                <tr>
+                                    <td><b>Employee</b></td>
+                                    <td>{employee?.FullName}</td>
+                                </tr>
 
-                    //await _emailService.SendEmailAsync(
-                    //    manager.Email,
-                    //    "New Missed Punch Request",
-                    //    body,
-                    //    string.IsNullOrEmpty(dto.HrEmail)
-                    //        ? null
-                    //        : new List<string> { dto.HrEmail } // ✅ convert string → list
+                                <tr>
+                                    <td><b>Date</b></td>
+                                    <td>{dto.MissedDate:dd-MM-yyyy}</td>
+                                </tr>
 
-                    //);
+                                <tr>
+                                    <td><b>Type</b></td>
+                                    <td>{dto.MissedType}</td>
+                                </tr>
+
+                                <tr>
+                                    <td><b>Reason</b></td>
+                                    <td>{dto.Reason}</td>
+                                </tr>
+
+                                <tr>
+                                    <td><b>Shift</b></td>
+                                    <td>{shift.ShiftName}</td>
+                                </tr>
+
+                                <tr>
+                                    <td><b>Shift Start</b></td>
+                                    <td>{shift.ShiftStartTime:hh\\:mm tt}</td>
+                                </tr>
+
+                                <tr>
+                                    <td><b>Shift End</b></td>
+                                    <td>{shift.ShiftEndTime:hh\\:mm tt}</td>
+                                </tr>
+
+                            </table>
+
+                            <p>Please review and take action.</p>
+
+                            <br/>
+
+                            <p>
+                                Regards,<br/>
+                                <b>HRMS Team</b>
+                            </p>
+
+                        </div>
+                        ";
+
+
+                    // ========================================================
+                    // CC LIST
+                    // ========================================================
 
                     var ccList = new List<string>();
+
 
                     // Reporting HR
                     if (!string.IsNullOrWhiteSpace(reportingHrEmail))
@@ -153,18 +359,30 @@ namespace BusinessLayer.Implementations
                         ccList.Add(reportingHrEmail);
                     }
 
-                    // UI CC Emails
+
+                    // UI HR Emails
                     if (!string.IsNullOrWhiteSpace(dto.HrEmail))
                     {
                         ccList.AddRange(
                             dto.HrEmail
-                                .Split(',', StringSplitOptions.RemoveEmptyEntries)
+                                .Split(
+                                    ',',
+                                    StringSplitOptions.RemoveEmptyEntries)
                                 .Select(x => x.Trim())
-                                .Where(x => !string.IsNullOrEmpty(x))
+                                .Where(x =>
+                                    !string.IsNullOrEmpty(x))
                         );
                     }
 
-                    ccList = ccList.Distinct().ToList();
+
+                    ccList = ccList
+                        .Distinct()
+                        .ToList();
+
+
+                    // ========================================================
+                    // SEND EMAIL
+                    // ========================================================
 
                     await _emailService.SendEmailAsync(
                         manager.Email,
@@ -173,11 +391,17 @@ namespace BusinessLayer.Implementations
                         ccList
                     );
                 }
+
+
+                // ============================================================
+                // RETURN
+                // ============================================================
+
                 return entity;
             }
-            catch(Exception ex)
+            catch (Exception ex)
             {
-                throw ex;
+                throw;
             }
         }
 

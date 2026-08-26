@@ -297,7 +297,7 @@ namespace HRMS_Backend.Controllers
 
             return Ok(result);
         }
-
+      
         // 🔹 DELETE: api/ClockInOut/5
         [HttpPost("DeleteClockinOut")]
         public async Task<IActionResult> DeleteClockinOut([FromQuery]int id)
@@ -413,8 +413,19 @@ namespace HRMS_Backend.Controllers
         public async Task<IActionResult> CreateMissedPunchRequest(
         CreateMissedPunchRequestDto dto)
         {
-            var result = await _service.CreateMissedPunchRequest(dto);
-            return Ok(result);
+            try
+            {
+                var result = await _service.CreateMissedPunchRequest(dto);
+
+                return Ok(result);
+            }
+            catch (Exception ex)
+            {
+                return BadRequest(new
+                {
+                    message = ex.Message
+                });
+            }
         }
         
         [HttpGet("getmissedpunchrequest")]
