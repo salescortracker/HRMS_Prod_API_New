@@ -40,19 +40,23 @@ namespace BusinessLayer.Implementations
             return entity == null ? null : MapToDto(entity);
         }
 
-        public async Task<IEnumerable<ClockInOutDto>> GetTodayByEmployeeAsync(
-            string employeeCode, int companyId, int regionId)
+        public async Task<IEnumerable<ClockInOutDto>> GetTodayByEmployeeAsync(string employeeCode, int companyId, int regionId)
         {
             var today = DateOnly.FromDateTime(DateTime.Today);
-            var data = await _unitOfWork.Repository<ClockInOut>().GetAllAsync();
+            var previousDate = today.AddDays(-1);
 
-            return data
-                .Where(x =>
+            var data = await _unitOfWork
+                .Repository<ClockInOut>()
+                .FindAsync(x =>
                     x.EmployeeCode == employeeCode &&
                     x.CompanyId == companyId &&
                     x.RegionId == regionId &&
-                    x.AttendanceDate == today)
-                .OrderBy(x => x.ActionTime)
+                    (x.AttendanceDate == today ||
+                     x.AttendanceDate == previousDate));
+
+            return data
+                .OrderBy(x => x.AttendanceDate)
+                .ThenBy(x => x.ActionTime)
                 .Select(MapToDto)
                 .ToList();
         }
@@ -81,7 +85,7 @@ GetAttendanceByDateRangeAsync(
                 .Select(MapToDto)
                 .ToList();
         }
-
+        
         public async Task<ClockInOutDto> AddAsync(ClockInOutCreateDto dto, int userId)
 
         {

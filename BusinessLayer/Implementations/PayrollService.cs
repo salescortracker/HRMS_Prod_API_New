@@ -231,34 +231,7 @@ namespace BusinessLayer.Implementations
                 payrollDetails.Add(CreatePayrollDetail(item.ComponentId, amount, userId));
             }
 
-            /* ================= ATTENDANCE ================= */
-
-            //        // UPDATED: now includes lateCount
-            //        var attendance = await GetEmployeeAttendanceSummary(
-            //            empSalary.EmployeeId, userId, month, year);
-            //        decimal lateDeductionAmount =
-            //attendance.lateDeductionDays * (attendance.workingDays == 0 ? 0 : gross / attendance.workingDays);
-
-            //        int allowedLeaves = 1;
-            //        int allowedHalfDays = 2;
-
-            //        // Existing logic (no change needed)
-            //        int extraLeaves = Math.Max(0, attendance.leaveDays - allowedLeaves);
-            //        int extraHalfDays = Math.Max(0, attendance.halfDays - allowedHalfDays);
-
-            //        decimal perDaySalary = attendance.workingDays == 0
-            //            ? 0
-            //            : gross / attendance.workingDays;
-
-            //        decimal attendanceDeduction =
-            //            (extraLeaves * perDaySalary) +
-            //            (extraHalfDays * (perDaySalary / 2)) +
-            //            lateDeductionAmount;
-
-            //        attendanceDeduction = Math.Round(attendanceDeduction, 2);
-
-
-            /* ================= ATTENDANCE ================= */
+          
 
             var attendance = await GetEmployeeAttendanceSummary(
                 empSalary.EmployeeId,
@@ -266,15 +239,23 @@ namespace BusinessLayer.Implementations
                 month,
                 year
             );
+            int allowedLeaves = 1;
 
+            int extraLeaves = Math.Max(
+                0,
+                attendance.leaveDays - allowedLeaves
+            );
+
+            decimal perDaySalary = attendance.workingDays > 0
+                ? gross / attendance.workingDays
+                : 0;
+
+            decimal leaveDeduction = extraLeaves * perDaySalary;
             // =========================================
             // PER DAY SALARY
             // =========================================
 
-            decimal perDaySalary =
-                attendance.workingDays == 0
-                ? 0
-                : gross / attendance.workingDays;
+         
 
             // =========================================
             // HALF DAY CALCULATION
@@ -367,39 +348,6 @@ namespace BusinessLayer.Implementations
             // =========================================
 
             gross = earnedSalary;
-
-
-
-
-
-            /* ================= EXPENSES ================= */
-
-            //        var expenses = await GetApprovedExpenses(
-            //empSalary.EmployeeId, month, year);
-
-            //        if (expenses > 0)
-            //        {
-            //            gross += expenses;
-
-            //            payrollDetails.Add(new PayrollDetail
-            //            {
-            //                Amount = expenses,
-            //                UserId = userId,
-            //                CreatedAt = DateTime.UtcNow
-            //            });
-            //}
-
-            //return (
-            //    Math.Round(gross, 2),
-            //    Math.Round(totalDeduction, 2),
-            //    attendanceDeduction,
-            //    expenses,
-            //    payrollDetails
-            //);
-
-
-
-
 
 
 
@@ -618,8 +566,8 @@ namespace BusinessLayer.Implementations
                 .ToListAsync();
 
             var designations = await _context.Designations
-    .Where(d => d.CompanyId == dto.CompanyId && d.RegionId == dto.RegionId)
-    .ToListAsync();
+                .Where(d => d.CompanyId == dto.CompanyId && d.RegionId == dto.RegionId)
+                .ToListAsync();
 
             var personalDetails = await _context.EmployeePersonalDetails
                 .Where(p => p.CompanyId == dto.CompanyId && p.RegionId == dto.RegionId)
@@ -655,8 +603,8 @@ namespace BusinessLayer.Implementations
                     ?.DepartmentName;
 
                 var designationName = designations
-    .FirstOrDefault(d => d.DesignationId == user?.DesignationId)
-    ?.DesignationName;
+                .FirstOrDefault(d => d.DesignationId == user?.DesignationId)
+                ?.DesignationName;
 
                 // 🔥 DESIGNATION (DIRECT STRING)
                 // var designationName = user?.Designation;
@@ -681,6 +629,11 @@ namespace BusinessLayer.Implementations
                     Type = components
                         .FirstOrDefault(c => c.ComponentId == d.ComponentId)?.Type ?? "Other"
                 }).ToList();
+                var attendance = await GetEmployeeAttendanceSummary(
+                    trx.EmployeeId,
+                    dto.EmployeeId,
+                    trx.Month,
+                    trx.Year);
 
                 // 🔥 ATTENDANCE
                 //            var attendance = await GetEmployeeAttendanceSummary(
@@ -707,7 +660,7 @@ namespace BusinessLayer.Implementations
                 //            attendanceDeduction += lateDeductionAmount;
 
                 //            attendanceDeduction = Math.Round(attendanceDeduction, 2);
-              //  decimal attendanceDeduction = trx.AttendanceDeduction;
+                //  decimal attendanceDeduction = trx.AttendanceDeduction;
 
                 // 🔥 EXPENSES
                 var expenses = await GetApprovedExpenses(
@@ -726,7 +679,13 @@ namespace BusinessLayer.Implementations
                     TotalDeductions = trx.TotalDeductions,
                     NetSalary = trx.NetSalary,
 
-                //    AttendanceDeduction = attendanceDeduction,
+                    WorkingDays = attendance.workingDays,
+                    LeaveDays = attendance.leaveDays,
+                    PresentDays = attendance.presentDays,
+                    HalfDays = attendance.halfDays,
+
+
+                    //    AttendanceDeduction = attendanceDeduction,
                     Expenses = expenses,
 
                     // ✅ EMPLOYEE DETAILS
